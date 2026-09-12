@@ -11,7 +11,7 @@ The playfield is real **Three.js** (chunky pastel blocks, isometric-ish camera, 
 3. Pick a math tool. A true equation busts those blocks.
 4. Clear the whole board to win the level — a new solvable board deals itself.
 
-**Hint** highlights one true equation and spends 1 hint (you start a run with 5; each level win gives +1). **Undo** puts the last successful bust back and returns those points. **New** starts a fresh run (score resets, hints back to 5) without leaving the game.
+**Hint** (bottom bar) highlights one true equation and spends 1 hint (you start a run with 5; each level win gives +1). **Undo** (next to Hint) puts the last successful bust back and returns those points. A run starts from the title **Play** button; winning a board auto-deals the next one.
 
 A wrong operator clears your picks. A true equation that would strand the board still explodes, then auto-reverses with a coach note.
 

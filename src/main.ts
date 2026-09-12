@@ -208,7 +208,7 @@ function ensureView(): Board3D {
   return view;
 }
 
-function startRun(fromTitle: boolean): void {
+function startRun(): void {
   screen = "play";
   score = 0;
   hints = START_HINTS;
@@ -216,7 +216,7 @@ function startRun(fromTitle: boolean): void {
   animating = false;
   updateChrome();
   ensureView();
-  dealBoard(true, fromTitle ? "Tap three blocks!" : "New game! Tap three blocks.");
+  dealBoard(true, "Tap three blocks!");
   requestAnimationFrame(() => {
     view?.resize();
     drawLine();
@@ -435,9 +435,6 @@ function updateChrome(): void {
     hintBtn.disabled = celebrating || animating || Boolean(pendingClear);
   }
 
-  const newBtn = document.querySelector<HTMLButtonElement>("[data-action='new']");
-  if (newBtn) newBtn.disabled = animating && !celebrating;
-
   play?.classList.toggle("won", celebrating);
   play?.classList.toggle("wrong-path", pathBlocked);
 
@@ -463,16 +460,9 @@ function ensureShell(): void {
 
       <div id="play" class="play" hidden>
         <header class="topbar">
-          <div class="top-row">
-            <div class="top-actions">
-              <button type="button" class="chip" data-action="new">New</button>
-              <button type="button" class="chip" data-action="undo">Undo</button>
-            </div>
-            <div class="scores">
-              <div class="score-now"><span id="score">${score}</span></div>
-              <div class="score-best">Best <span id="best">${highScore}</span> · Lv <span id="level">${level}</span></div>
-            </div>
-            <button type="button" class="chip chip-hint" data-action="hint">Hint <span id="hints-left">${hints}</span></button>
+          <div class="scores">
+            <div class="score-now"><span id="score">${score}</span></div>
+            <div class="score-best">Best <span id="best">${highScore}</span> · Lv <span id="level">${level}</span></div>
           </div>
           <p id="status" class="status status-${statusKind}" role="status">${statusText}</p>
         </header>
@@ -486,6 +476,10 @@ function ensureShell(): void {
             <p id="coach" class="coach" hidden role="status"></p>
           </div>
           <div class="ops-bar">
+            <div class="dock">
+              <button type="button" class="dock-btn dock-undo" data-action="undo">Undo</button>
+              <button type="button" class="dock-btn dock-hint" data-action="hint">Hint <span id="hints-left">${hints}</span></button>
+            </div>
             <div class="ops">
               <button type="button" class="op op-mul" data-op="×">×</button>
               <button type="button" class="op op-div" data-op="÷">÷</button>
@@ -553,12 +547,7 @@ function bindEvents(): void {
   app.querySelector("[data-action='play']")?.addEventListener("click", () => {
     unlockAudio();
     playStart();
-    startRun(true);
-  });
-  app.querySelector("[data-action='new']")?.addEventListener("click", () => {
-    unlockAudio();
-    if (animating && !celebrating) return;
-    startRun(false);
+    startRun();
   });
   app.querySelector("[data-action='undo']")?.addEventListener("click", () => {
     unlockAudio();
