@@ -1,11 +1,13 @@
 [
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "com.josephschneider77.mathbusters",
       "sha256_cert_fingerprints": [
-        "REPLACE_WITH_PLAY_APP_SIGNING_SHA256"
+        "86:0A:E7:16:8B:B8:70:A7:5F:6C:27:B5:B4:11:5D:BA:DD:30:38:F1:E1:99:C2:88:25:B7:0B:43:25:18:BB:36"
       ]
     }
   }
