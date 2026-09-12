@@ -15,6 +15,16 @@ The playfield is real **Three.js** (chunky pastel blocks, isometric-ish camera, 
 
 A wrong operator clears your picks. A true equation that would strand the board still explodes, then auto-reverses with a coach note.
 
+## Level ladder
+
+A Play run keeps your level across auto-restocks (each win deals the next board and +1 hint):
+
+1. **Lv 1–5** — 3×3, all four ops (`+ − × ÷`). Numbers get bigger across these levels (still ~3rd-grade; no huge multi-digit monsters).
+2. **Lv 6–10** — 3×3, exactly two ops. Cycles `−÷`, `+×`, `−×`, `+÷`, `×÷`. Unused op buttons hide. Generation and hints only use the pair on screen.
+3. **Lv 11+** — 6×6, all four ops. Same rule: tap exactly three numbers, then one op, until all 36 cells are gone (12 busts).
+
+Every dealt board has a winning path under the current ops and size.
+
 ## Scoring
 
 - **+100** per successful bust (a trio that stays cleared).
