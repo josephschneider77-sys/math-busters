@@ -186,6 +186,62 @@ button:disabled { cursor: default; }
 .status-stuck { background: rgba(180, 76, 255, 0.28); border-color: #c77dff; }
 .status-path { background: rgba(255, 183, 3, 0.28); border-color: #ffb703; color: #fff8e7; }
 
+.tip-slot {
+  flex: 0 0 auto;
+  padding: 0 10px 6px;
+}
+
+.tip-slot[hidden] { display: none; }
+
+.tip-card {
+  padding: 7px 10px 8px;
+  border-radius: 14px;
+  background: #fff3c4;
+  border: 3px solid #ff4fd8;
+  box-shadow: 0 0 0 2px #ffe600, 0 3px 0 #5c0f96;
+  color: #3d1860;
+  text-align: center;
+}
+
+.tip-step {
+  margin: 0;
+  font-size: 0.68rem;
+  color: #ff4fd8;
+  font-weight: 900;
+}
+
+.tip-body {
+  margin: 3px 0 7px;
+  font-size: clamp(0.78rem, 3vw, 0.9rem);
+}
+
+.tip-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.tip-skip,
+.tip-next {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.tip-skip {
+  border: 2px solid #c77dff;
+  background: #fff;
+  color: #7b5ea7;
+}
+
+.tip-next {
+  border: 2px solid #ff4fd8;
+  background: #ffe600;
+  color: #4a0a7a;
+}
+
 .playfield {
   flex: 1 1 auto;
   min-height: 0;

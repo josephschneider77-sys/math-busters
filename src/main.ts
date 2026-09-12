@@ -31,9 +31,16 @@ type StatusKind = "idle" | "ready" | "hit" | "miss" | "win" | "stuck" | "path";
 type Screen = "title" | "play";
 
 const HS_KEY = "math-busters-high-score";
+const TUT_KEY = "math-busters-tutorial-seen";
 const BUST_POINTS = 100;
 const CLEAR_BONUS = 250;
 const START_HINTS = 5;
+
+const TIPS = [
+  { step: "1 / 3", body: "Tap three number blocks." },
+  { step: "2 / 3", body: "Then tap × ÷ + − under the board to bust a true equation!" },
+  { step: "3 / 3", body: "Stuck? Hint shows a winning trio. Undo takes a bust back." },
+] as const;
 
 function requireApp(): HTMLDivElement {
   const el = document.querySelector<HTMLDivElement>("#app");
@@ -55,6 +62,22 @@ function writeHighScore(value: number): void {
     window.localStorage.setItem(HS_KEY, String(value));
   } catch {
     /* ignore quota / private mode */
+  }
+}
+
+function hasSeenTutorial(): boolean {
+  try {
+    return window.localStorage.getItem(TUT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markTutorialSeen(): void {
+  try {
+    window.localStorage.setItem(TUT_KEY, "1");
+  } catch {
+    /* ignore */
   }
 }
 
@@ -81,6 +104,7 @@ let view: Board3D | null = null;
 let pathBlocked = false;
 let coachText = "";
 let dealGen = 0;
+let tipStep = -1;
 
 function sameCell(a: CellRef, b: CellRef): boolean {
   return a.row === b.row && a.col === b.col;
@@ -217,10 +241,55 @@ function startRun(): void {
   updateChrome();
   ensureView();
   dealBoard(true, "Tap three blocks!");
+  beginTutorialIfNeeded();
   requestAnimationFrame(() => {
     view?.resize();
     drawLine();
   });
+}
+
+function beginTutorialIfNeeded(): void {
+  tipStep = hasSeenTutorial() ? -1 : 0;
+  renderTip();
+}
+
+function dismissTutorial(): void {
+  if (tipStep >= 0) markTutorialSeen();
+  tipStep = -1;
+  renderTip();
+}
+
+function advanceTip(): void {
+  if (tipStep < 0) return;
+  tipStep += 1;
+  if (tipStep >= TIPS.length) {
+    tipStep = -1;
+    markTutorialSeen();
+  }
+  renderTip();
+}
+
+function renderTip(): void {
+  const slot = document.querySelector<HTMLElement>("#tip-slot");
+  if (!slot) return;
+  if (tipStep < 0 || tipStep >= TIPS.length) {
+    slot.hidden = true;
+    slot.replaceChildren();
+    return;
+  }
+  const tip = TIPS[tipStep];
+  const last = tipStep === TIPS.length - 1;
+  slot.hidden = false;
+  slot.innerHTML = `
+    <div class="tip-card" role="dialog" aria-label="How to play">
+      <p class="tip-step">${tip.step}</p>
+      <p class="tip-body">${tip.body}</p>
+      <div class="tip-actions">
+        <button type="button" class="tip-skip" data-tip="skip">Skip</button>
+        <button type="button" class="tip-next" data-tip="next">${last ? "Let’s play!" : "Got it"}</button>
+      </div>
+    </div>
+  `;
 }
 
 function drawLine(): void {
@@ -359,6 +428,7 @@ async function tryOperator(op: Operator): Promise<void> {
     await wait(1100);
     if (gen !== dealGen) return;
     level += 1;
+    dismissTutorial();
     dealBoard(false, "Fresh board! Tap three blocks.");
     return;
   }
@@ -469,6 +539,7 @@ function ensureShell(): void {
           </div>
           <p id="status" class="status status-${statusKind}" role="status">${statusText}</p>
         </header>
+        <div id="tip-slot" class="tip-slot" hidden></div>
 
         <div class="playfield">
           <div class="board-wrap">
@@ -559,6 +630,13 @@ function bindEvents(): void {
   app.querySelector("[data-action='hint']")?.addEventListener("click", () => {
     unlockAudio();
     showHint();
+  });
+  app.querySelector("#tip-slot")?.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-tip]");
+    if (!button) return;
+    unlockAudio();
+    if (button.dataset.tip === "skip") dismissTutorial();
+    else advanceTip();
   });
 }
 
