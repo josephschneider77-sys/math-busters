@@ -12,7 +12,17 @@ import {
   type Board,
   type CellRef,
 } from "./puzzle";
-import { armAudioUnlock, playBust, playDeselect, playMiss, playPathWarn, playReform, playSelect, unlockAudio } from "./sfx";
+import {
+  armAudioUnlock,
+  playBust,
+  playDeselect,
+  playMiss,
+  playPathWarn,
+  playReform,
+  playSelect,
+  playWin,
+  unlockAudio,
+} from "./sfx";
 import "./style.css";
 
 type StatusKind = "idle" | "ready" | "hit" | "miss" | "win" | "stuck" | "path";
@@ -40,6 +50,7 @@ let reforming: CellRef[] = [];
 let view: Board3D | null = null;
 let pathBlocked = false;
 let coachText = "";
+let dealGen = 0;
 
 function sameCell(a: CellRef, b: CellRef): boolean {
   return a.row === b.row && a.col === b.col;
@@ -63,6 +74,12 @@ function selectionValues(): [number, number, number] | null {
 function setStatus(kind: StatusKind, text: string): void {
   statusKind = kind;
   statusText = text;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 function defaultIdleMessage(): string {
@@ -96,6 +113,10 @@ function addToSelection(cell: CellRef): boolean {
   if (isSelected(cell) || selection.length >= 3) return false;
 
   hintCells = [];
+  if (pathBlocked) {
+    pathBlocked = false;
+    coachText = "";
+  }
   selection = [...selection, cell];
   playSelect();
   if (selection.length < 3) {
@@ -127,20 +148,29 @@ function syncView(): void {
   view?.sync(board, selection, hintCells, hiddenCells());
 }
 
-function newPuzzle(useExample = false): void {
-  if (animating) return;
+function dealBoard(useExample = false, message?: string): void {
+  dealGen += 1;
   board = useExample ? cloneBoard(EXAMPLE_BOARD) : generatePuzzle();
   busts = 0;
   celebrating = false;
   press = null;
+  pendingClear = null;
   history = [];
   reforming = [];
   pathBlocked = false;
   coachText = "";
-  resetPicks(useExample ? "Joe’s starter board. Tap three blocks!" : "New puzzle! Tap three blocks.");
+  selection = [];
+  hintCells = [];
+  resetPicks(message ?? (useExample ? "Joe’s starter board. Tap three blocks!" : "New puzzle! Tap three blocks."));
   syncView();
   updateChrome();
   drawLine();
+}
+
+function newPuzzle(useExample = false): void {
+  if (animating && !celebrating) return;
+  animating = false;
+  dealBoard(useExample, useExample ? "Joe’s starter board. Tap three blocks!" : "New puzzle! Tap three blocks.");
 }
 
 function drawLine(): void {
@@ -212,7 +242,12 @@ async function tryOperator(op: Operator): Promise<void> {
     return;
   }
 
-  pendingClear = selection.slice();
+  const cells = selection.slice();
+  const preview = clearCells(board, cells);
+  const wins = isBoardEmpty(preview);
+  const stranded = !wins && !isFullySolvable(preview);
+
+  pendingClear = cells;
   animating = true;
   const bustText = formatEquation(equation);
   setStatus("hit", `${bustText}  ·  Bust!`);
@@ -220,29 +255,56 @@ async function tryOperator(op: Operator): Promise<void> {
   syncView();
   drawLine();
   playBust();
-  await view.explode(pendingClear);
+  await view.explode(cells);
+
+  if (stranded) {
+    coachText = `${bustText} works, but wrong order — those blocks came back!`;
+    pathBlocked = true;
+    setStatus("path", coachText);
+    updateChrome();
+    playPathWarn();
+    await wait(240);
+    reforming = cells;
+    playReform();
+    await view.implode(cells);
+    pendingClear = null;
+    reforming = [];
+    selection = [];
+    hintCells = [];
+    animating = false;
+    celebrating = false;
+    resetPicks(coachText);
+    setStatus("path", coachText);
+    syncView();
+    updateChrome();
+    drawLine();
+    return;
+  }
 
   history.push({ board: cloneBoard(board), busts });
-  board = clearCells(board, pendingClear);
+  board = preview;
   busts += 1;
-  animating = false;
+  pendingClear = null;
   reforming = [];
-  pathBlocked = !isBoardEmpty(board) && !isFullySolvable(board);
-  resetPicks(
-    isBoardEmpty(board) ? `${bustText}  ·  You busted every block!` : `${bustText}  ·  Great bust! Keep going.`,
-  );
-  if (pathBlocked) {
-    coachText = isBoardStuck(board)
-      ? `${bustText} works, but leftover numbers can’t make another equation. Tap Undo!`
-      : `${bustText} works, but that order won’t finish the board. Tap Undo!`;
-    setStatus("path", coachText);
-    playPathWarn();
-  } else {
-    coachText = "";
-  }
+  pathBlocked = false;
+  coachText = "";
+  resetPicks(wins ? `${bustText}  ·  You busted every block!` : `${bustText}  ·  Great bust! Keep going.`);
   syncView();
   updateChrome();
   drawLine();
+
+  if (wins) {
+    playWin();
+    const gen = dealGen;
+    animating = false;
+    await wait(1100);
+    if (gen !== dealGen) return;
+    dealBoard(false, "Fresh board! Tap three blocks.");
+    return;
+  }
+
+  animating = false;
+  updateChrome();
 }
 
 function showHint(): void {

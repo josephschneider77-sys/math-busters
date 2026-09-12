@@ -207,6 +207,21 @@ export function playPathWarn(): void {
   second.stop(t + 0.42);
 }
 
+/** Short win sparkle after the board is fully cleared. */
+export function playWin(): void {
+  if (!ready()) return;
+  const t = getCtx()!.currentTime;
+  const notes = [523, 659, 784, 1047];
+  notes.forEach((freq, i) => {
+    const start = t + i * 0.07;
+    const spark = tone("triangle", freq, start);
+    const g = env(start, 0.16, 0.008, 0.04, 0.16);
+    spark.connect(g).connect(master!);
+    spark.start(start);
+    spark.stop(start + 0.22);
+  });
+}
+
 /** Reverse whoosh + rebuild tones when Undo reforms busted blocks. */
 export function playReform(): void {
   if (!ready()) return;

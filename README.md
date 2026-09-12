@@ -11,11 +11,11 @@ Inspired by Joe’s handwritten design paper: clear every number from a 3×3 boa
 1. Tap three number blocks (one tap each — no dragging).
 2. Pick a math tool.
 3. If any order of those numbers makes `a op b = c` — with exact whole-number division only — those three blocks clear.
-4. Clear the whole board to win.
+4. Clear the whole board to win — then a new solvable board deals itself.
 
-**Hint** highlights one true equation. **Undo bust** puts the last three blocks back if a move leaves leftovers that no longer work. If a true equation would strand the board, a coach banner asks you to Undo — the math still counts, it just isn’t the finishing order.
+**Hint** highlights one true equation. **Undo bust** puts the last three blocks back if you change your mind after a solvable bust. If a true equation would strand the board, the blocks still explode, then fly back with a coach note that it was the wrong order.
 
-**New puzzle** builds a fresh 3×3 board that has at least one valid trio and can be cleared all the way.
+**New puzzle** still builds a fresh 3×3 board mid-game (at least one valid trio, fully clearable).
 
 ## Play
 
