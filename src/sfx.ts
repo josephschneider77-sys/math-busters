@@ -90,6 +90,21 @@ export function armAudioUnlock(): void {
   window.addEventListener("touchstart", arm, true);
 }
 
+/** Bright pop when Play starts a run. */
+export function playStart(): void {
+  if (!ready()) return;
+  const t = getCtx()!.currentTime;
+  const notes = [659, 880, 1175];
+  notes.forEach((freq, i) => {
+    const start = t + i * 0.045;
+    const o = tone("triangle", freq, start);
+    const g = env(start, 0.14, 0.006, 0.025, 0.1);
+    o.connect(g).connect(master!);
+    o.start(start);
+    o.stop(start + 0.14);
+  });
+}
+
 /** Short candy click when a number block is selected. */
 export function playSelect(): void {
   if (!ready()) return;
@@ -166,6 +181,18 @@ export function playBust(): void {
     spark.start(start);
     spark.stop(start + 0.15);
   });
+}
+
+/** Soft deny when a control is empty (no hints left). */
+export function playDeny(): void {
+  if (!ready()) return;
+  const t = getCtx()!.currentTime;
+  const o = tone("triangle", 220, t);
+  o.frequency.exponentialRampToValueAtTime(160, t + 0.1);
+  const g = env(t, 0.1, 0.006, 0.03, 0.08);
+  o.connect(g).connect(master!);
+  o.start(t);
+  o.stop(t + 0.14);
 }
 
 /** Soft miss — friendly “hmm” when an operator doesn’t make an equation. */

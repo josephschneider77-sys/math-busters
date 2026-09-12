@@ -15,17 +15,25 @@ import {
 import {
   armAudioUnlock,
   playBust,
+  playDeny,
   playDeselect,
   playMiss,
   playPathWarn,
   playReform,
   playSelect,
+  playStart,
   playWin,
   unlockAudio,
 } from "./sfx";
 import "./style.css";
 
 type StatusKind = "idle" | "ready" | "hit" | "miss" | "win" | "stuck" | "path";
+type Screen = "title" | "play";
+
+const HS_KEY = "math-busters-high-score";
+const BUST_POINTS = 100;
+const CLEAR_BONUS = 250;
+const START_HINTS = 5;
 
 function requireApp(): HTMLDivElement {
   const el = document.querySelector<HTMLDivElement>("#app");
@@ -33,19 +41,41 @@ function requireApp(): HTMLDivElement {
   return el;
 }
 
+function readHighScore(): number {
+  try {
+    const n = Number(window.localStorage.getItem(HS_KEY));
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeHighScore(value: number): void {
+  try {
+    window.localStorage.setItem(HS_KEY, String(value));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 const app = requireApp();
 
+let screen: Screen = "title";
 let board: Board = cloneBoard(EXAMPLE_BOARD);
 let selection: CellRef[] = [];
 let busts = 0;
+let score = 0;
+let highScore = readHighScore();
+let hints = START_HINTS;
+let level = 1;
 let celebrating = false;
 let hintCells: CellRef[] = [];
 let statusKind: StatusKind = "idle";
-let statusText = "Joe’s starter board. Tap three blocks!";
+let statusText = "Tap three number blocks.";
 let pendingClear: CellRef[] | null = null;
 let press: { x: number; y: number } | null = null;
 let animating = false;
-let history: Array<{ board: Board; busts: number }> = [];
+let history: Array<{ board: Board; busts: number; score: number }> = [];
 let reforming: CellRef[] = [];
 let view: Board3D | null = null;
 let pathBlocked = false;
@@ -58,10 +88,6 @@ function sameCell(a: CellRef, b: CellRef): boolean {
 
 function isSelected(cell: CellRef): boolean {
   return selection.some((picked) => sameCell(picked, cell));
-}
-
-function filledCount(): number {
-  return board.flat().filter((value) => value !== null).length;
 }
 
 function selectionValues(): [number, number, number] | null {
@@ -82,12 +108,19 @@ function wait(ms: number): Promise<void> {
   });
 }
 
+function bumpHighScore(): void {
+  if (score > highScore) {
+    highScore = score;
+    writeHighScore(highScore);
+  }
+}
+
 function defaultIdleMessage(): string {
   if (isBoardEmpty(board)) return "You busted every block!";
   if (isBoardStuck(board)) {
     return history.length
       ? "Those leftover numbers don’t make an equation. Undo and try a different trio!"
-      : "Those leftover numbers don’t make an equation. Try a new puzzle!";
+      : "Those leftover numbers don’t make an equation. Try a new game!";
   }
   return "Tap three number blocks.";
 }
@@ -122,7 +155,7 @@ function addToSelection(cell: CellRef): boolean {
   if (selection.length < 3) {
     setStatus("idle", selection.length === 1 ? "Nice! Tap two more." : "One more block…");
   } else {
-    setStatus("ready", "Pick a math tool: ×  ÷  +  −");
+    setStatus("ready", "Pick ×  ÷  +  −");
   }
   return true;
 }
@@ -161,16 +194,33 @@ function dealBoard(useExample = false, message?: string): void {
   coachText = "";
   selection = [];
   hintCells = [];
-  resetPicks(message ?? (useExample ? "Joe’s starter board. Tap three blocks!" : "New puzzle! Tap three blocks."));
+  resetPicks(message ?? "Tap three number blocks.");
   syncView();
   updateChrome();
   drawLine();
 }
 
-function newPuzzle(useExample = false): void {
-  if (animating && !celebrating) return;
+function ensureView(): Board3D {
+  if (view) return view;
+  const host = document.querySelector<HTMLElement>("#board3d");
+  if (!host) throw new Error("Missing #board3d");
+  view = new Board3D(host);
+  return view;
+}
+
+function startRun(fromTitle: boolean): void {
+  screen = "play";
+  score = 0;
+  hints = START_HINTS;
+  level = 1;
   animating = false;
-  dealBoard(useExample, useExample ? "Joe’s starter board. Tap three blocks!" : "New puzzle! Tap three blocks.");
+  updateChrome();
+  ensureView();
+  dealBoard(true, fromTitle ? "Tap three blocks!" : "New game! Tap three blocks.");
+  requestAnimationFrame(() => {
+    view?.resize();
+    drawLine();
+  });
 }
 
 function drawLine(): void {
@@ -207,6 +257,7 @@ async function undoBust(): Promise<void> {
   animating = true;
   board = cloneBoard(previous.board);
   busts = previous.busts;
+  score = previous.score;
   celebrating = false;
   reforming = returning;
   pathBlocked = false;
@@ -281,14 +332,20 @@ async function tryOperator(op: Operator): Promise<void> {
     return;
   }
 
-  history.push({ board: cloneBoard(board), busts });
+  history.push({ board: cloneBoard(board), busts, score });
   board = preview;
   busts += 1;
+  score += BUST_POINTS;
+  if (wins) {
+    score += CLEAR_BONUS;
+    hints += 1;
+  }
+  bumpHighScore();
   pendingClear = null;
   reforming = [];
   pathBlocked = false;
   coachText = "";
-  resetPicks(wins ? `${bustText}  ·  You busted every block!` : `${bustText}  ·  Great bust! Keep going.`);
+  resetPicks(wins ? `${bustText}  ·  You busted every block!` : `${bustText}  ·  +${BUST_POINTS}! Keep going.`);
   syncView();
   updateChrome();
   drawLine();
@@ -297,8 +354,11 @@ async function tryOperator(op: Operator): Promise<void> {
     playWin();
     const gen = dealGen;
     animating = false;
+    setStatus("win", `${bustText}  ·  Level clear! +${CLEAR_BONUS}  ·  +1 hint`);
+    updateChrome();
     await wait(1100);
     if (gen !== dealGen) return;
+    level += 1;
     dealBoard(false, "Fresh board! Tap three blocks.");
     return;
   }
@@ -309,69 +369,83 @@ async function tryOperator(op: Operator): Promise<void> {
 
 function showHint(): void {
   if (celebrating || pendingClear || animating) return;
+  if (hints <= 0) {
+    playDeny();
+    const hintBtn = document.querySelector<HTMLButtonElement>("[data-action='hint']");
+    hintBtn?.classList.remove("has-none");
+    void hintBtn?.offsetWidth;
+    hintBtn?.classList.add("has-none");
+    setStatus("miss", "No hints left — win a board to earn one!");
+    updateChrome();
+    return;
+  }
   const trios = findValidTrios(board);
   if (trios.length === 0) {
     setStatus("stuck", defaultIdleMessage());
     updateChrome();
     return;
   }
+  hints -= 1;
   const trio = trios[Math.floor(Math.random() * trios.length)];
   hintCells = trio.cells;
   selection = [];
-  setStatus("idle", `Hint: ${formatEquation(trio.equation)} — can you find those blocks?`);
+  setStatus("idle", `Hint: ${formatEquation(trio.equation)} — find those blocks!`);
   syncView();
   updateChrome();
   drawLine();
 }
 
 function updateChrome(): void {
+  const splash = document.querySelector<HTMLElement>("#splash");
+  const play = document.querySelector<HTMLElement>("#play");
+  if (splash) splash.hidden = screen !== "title";
+  if (play) play.hidden = screen !== "play";
+
+  const splashBest = document.querySelector("#splash-best");
+  if (splashBest) {
+    splashBest.textContent = highScore > 0 ? `Best ${highScore}` : "Beat your best score!";
+  }
+
   const status = document.querySelector<HTMLElement>("#status");
   if (status) {
     status.className = `status status-${statusKind}`;
     status.textContent = statusText;
   }
 
-  const bustsEl = document.querySelector("#busts");
-  const leftEl = document.querySelector("#left");
-  if (bustsEl) bustsEl.textContent = String(busts);
-  if (leftEl) leftEl.textContent = String(filledCount());
+  const scoreEl = document.querySelector("#score");
+  const bestEl = document.querySelector("#best");
+  const levelEl = document.querySelector("#level");
+  const hintsEl = document.querySelector("#hints-left");
+  if (scoreEl) scoreEl.textContent = String(score);
+  if (bestEl) bestEl.textContent = String(highScore);
+  if (levelEl) levelEl.textContent = String(level);
+  if (hintsEl) hintsEl.textContent = String(hints);
 
-  const picks = selection
-    .map((cell) => board[cell.row][cell.col])
-    .filter((value): value is number => value !== null);
-  const tools = document.querySelector(".tools");
-  const toolsLabel = document.querySelector("#tools-label");
   const open = selection.length === 3 && !celebrating;
-  tools?.classList.toggle("open", open);
-  if (toolsLabel) {
-    toolsLabel.innerHTML =
-      picks.length === 3
-        ? `Math tools for <strong>${picks.join(" · ")}</strong>`
-        : "Pick three blocks first";
-  }
-
+  document.querySelector(".ops-bar")?.classList.toggle("open", open);
   document.querySelectorAll<HTMLButtonElement>("[data-op]").forEach((button) => {
     button.disabled = !open || animating;
   });
 
-  const clearBtn = document.querySelector<HTMLButtonElement>("[data-action='clear']");
-  if (clearBtn) clearBtn.disabled = selection.length === 0 || Boolean(pendingClear) || animating;
   const undoBtn = document.querySelector<HTMLButtonElement>("[data-action='undo']");
   if (undoBtn) undoBtn.disabled = history.length === 0 || Boolean(pendingClear) || animating;
 
-  document.querySelector(".stage")?.classList.toggle("won", celebrating);
-  document.querySelector(".stage")?.classList.toggle("wrong-path", pathBlocked);
-  const undoBtnEl = document.querySelector<HTMLButtonElement>("[data-action='undo']");
-  undoBtnEl?.classList.toggle("nudge", pathBlocked && history.length > 0 && !animating);
+  const hintBtn = document.querySelector<HTMLButtonElement>("[data-action='hint']");
+  if (hintBtn) {
+    hintBtn.disabled = celebrating || animating || Boolean(pendingClear);
+  }
+
+  const newBtn = document.querySelector<HTMLButtonElement>("[data-action='new']");
+  if (newBtn) newBtn.disabled = animating && !celebrating;
+
+  play?.classList.toggle("won", celebrating);
+  play?.classList.toggle("wrong-path", pathBlocked);
 
   const coach = document.querySelector<HTMLElement>("#coach");
   if (coach) {
     coach.hidden = !pathBlocked;
     coach.textContent = pathBlocked ? coachText : "";
   }
-
-  const newBtn = document.querySelector<HTMLButtonElement>("[data-action='new']");
-  if (newBtn) newBtn.textContent = celebrating ? "Play again" : "New puzzle";
 }
 
 function ensureShell(): void {
@@ -379,48 +453,51 @@ function ensureShell(): void {
 
   app.innerHTML = `
     <div class="shell">
-      <header class="hero">
+      <section id="splash" class="splash">
+        <div class="splash-mark" aria-hidden="true">×</div>
         <h1>Math Busters</h1>
-        <p class="howto">Tap <strong>3 blocks</strong>, pick <strong>×</strong> <strong>÷</strong> <strong>+</strong> <strong>−</strong>. True equation busts them!</p>
-      </header>
+        <p class="splash-how">Tap <strong>3 blocks</strong>, pick <strong>×</strong> <strong>÷</strong> <strong>+</strong> <strong>−</strong>. A true equation busts them!</p>
+        <p id="splash-best" class="splash-best">${highScore > 0 ? `Best ${highScore}` : "Beat your best score!"}</p>
+        <button type="button" class="play-cta" data-action="play">Play</button>
+      </section>
 
-      <div class="status-row">
-        <span class="meter">Busts <strong id="busts">${busts}</strong> · <strong id="left">${filledCount()}</strong> left</span>
-        <p id="status" class="status status-${statusKind}" role="status">${statusText}</p>
-      </div>
+      <div id="play" class="play" hidden>
+        <header class="topbar">
+          <div class="top-row">
+            <div class="top-actions">
+              <button type="button" class="chip" data-action="new">New</button>
+              <button type="button" class="chip" data-action="undo">Undo</button>
+            </div>
+            <div class="scores">
+              <div class="score-now"><span id="score">${score}</span></div>
+              <div class="score-best">Best <span id="best">${highScore}</span> · Lv <span id="level">${level}</span></div>
+            </div>
+            <button type="button" class="chip chip-hint" data-action="hint">Hint <span id="hints-left">${hints}</span></button>
+          </div>
+          <p id="status" class="status status-${statusKind}" role="status">${statusText}</p>
+        </header>
 
-      <div class="stage">
-        <div class="board-wrap">
-          <div id="board3d" class="board3d" role="grid" aria-label="Number blocks"></div>
-          <svg id="selection-line" class="selection-line" aria-hidden="true">
-            <polyline points="" />
-          </svg>
-          <p id="coach" class="coach" hidden role="status"></p>
-        </div>
-
-        <div class="tools">
-          <p id="tools-label" class="tools-label">Pick three blocks first</p>
-          <div class="ops">
-            <button type="button" class="op op-mul" data-op="×">×</button>
-            <button type="button" class="op op-div" data-op="÷">÷</button>
-            <button type="button" class="op op-add" data-op="+">+</button>
-            <button type="button" class="op op-sub" data-op="−">−</button>
+        <div class="playfield">
+          <div class="board-wrap">
+            <div id="board3d" class="board3d" role="grid" aria-label="Number blocks"></div>
+            <svg id="selection-line" class="selection-line" aria-hidden="true">
+              <polyline points="" />
+            </svg>
+            <p id="coach" class="coach" hidden role="status"></p>
+          </div>
+          <div class="ops-bar">
+            <div class="ops">
+              <button type="button" class="op op-mul" data-op="×">×</button>
+              <button type="button" class="op op-div" data-op="÷">÷</button>
+              <button type="button" class="op op-add" data-op="+">+</button>
+              <button type="button" class="op op-sub" data-op="−">−</button>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div class="actions">
-        <button type="button" data-action="clear">Clear</button>
-        <button type="button" data-action="undo">Undo</button>
-        <button type="button" data-action="hint">Hint</button>
-        <button type="button" class="primary" data-action="new">New puzzle</button>
       </div>
     </div>
   `;
 
-  const host = document.querySelector<HTMLElement>("#board3d");
-  if (!host) throw new Error("Missing #board3d");
-  view = new Board3D(host);
   bindEvents();
 }
 
@@ -433,7 +510,7 @@ function flashMiss(): void {
 }
 
 function tapCell(clientX: number, clientY: number): void {
-  if (celebrating || pendingClear || animating || !view) return;
+  if (screen !== "play" || celebrating || pendingClear || animating || !view) return;
   const cell = view.pick(clientX, clientY);
   if (!cell) return;
   if (isSelected(cell)) removeFromSelection(cell);
@@ -473,12 +550,15 @@ function bindEvents(): void {
     });
   });
 
-  app.querySelector("[data-action='clear']")?.addEventListener("click", () => {
+  app.querySelector("[data-action='play']")?.addEventListener("click", () => {
     unlockAudio();
-    resetPicks("Picks cleared. Tap three blocks.");
-    syncView();
-    updateChrome();
-    drawLine();
+    playStart();
+    startRun(true);
+  });
+  app.querySelector("[data-action='new']")?.addEventListener("click", () => {
+    unlockAudio();
+    if (animating && !celebrating) return;
+    startRun(false);
   });
   app.querySelector("[data-action='undo']")?.addEventListener("click", () => {
     unlockAudio();
@@ -487,10 +567,6 @@ function bindEvents(): void {
   app.querySelector("[data-action='hint']")?.addEventListener("click", () => {
     unlockAudio();
     showHint();
-  });
-  app.querySelector("[data-action='new']")?.addEventListener("click", () => {
-    unlockAudio();
-    newPuzzle(false);
   });
 }
 
@@ -505,7 +581,6 @@ window.visualViewport?.addEventListener("resize", () => {
 
 armAudioUnlock();
 ensureShell();
-syncView();
 updateChrome();
 requestAnimationFrame(() => {
   view?.resize();

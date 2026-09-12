@@ -1,21 +1,27 @@
 # Math Busters
 
-A cozy 3D number-block puzzle for kids. Line up **three numbers**, pick a math tool (**× ÷ + −**), and bust the blocks when they make a true equation. Correct busts shatter the cubes into candy pieces; **Undo** plays that explosion in reverse as the tiles reform.
+A cozy 3D number-block puzzle for kids. Line up **three numbers**, pick a math tool (**× ÷ + −**), and bust the blocks when they make a true equation. Correct busts shatter the cubes into candy pieces; a wrong-order bust explodes then flies back. Clearing a board auto-deals the next one.
 
-The playfield is real **Three.js** (chunky pastel blocks, isometric-ish camera, Lisa Frank candy lighting) inspired by [Division Drop](https://josephschneider77-sys.github.io/division-drop/). Gameplay stays Math Busters: pick 3 numbers → pick an operator → clear the equation.
-
-Inspired by Joe’s handwritten design paper: clear every number from a 3×3 board. Example first move on the starter puzzle: `4 × 5 = 20`.
+The playfield is real **Three.js** (chunky pastel blocks, isometric-ish camera, Lisa Frank candy lighting) inspired by [Division Drop](https://josephschneider77-sys.github.io/division-drop/).
 
 ## How to play
 
-1. Tap three number blocks (one tap each — no dragging).
-2. Pick a math tool.
-3. If any order of those numbers makes `a op b = c` — with exact whole-number division only — those three blocks clear.
-4. Clear the whole board to win — then a new solvable board deals itself.
+1. Tap **Play** on the title screen.
+2. Tap three number blocks (one tap each — no dragging).
+3. Pick a math tool. A true equation busts those blocks.
+4. Clear the whole board to win the level — a new solvable board deals itself.
 
-**Hint** highlights one true equation. **Undo bust** puts the last three blocks back if you change your mind after a solvable bust. If a true equation would strand the board, the blocks still explode, then fly back with a coach note that it was the wrong order.
+**Hint** highlights one true equation and spends 1 hint (you start a run with 5; each level win gives +1). **Undo** puts the last successful bust back and returns those points. **New** starts a fresh run (score resets, hints back to 5) without leaving the game.
 
-**New puzzle** still builds a fresh 3×3 board mid-game (at least one valid trio, fully clearable).
+A wrong operator clears your picks. A true equation that would strand the board still explodes, then auto-reverses with a coach note.
+
+## Scoring
+
+- **+100** per successful bust (a trio that stays cleared).
+- **+250** bonus when you clear the whole board (level win).
+- Wrong-order reverse and wrong-operator misses score 0.
+- **Undo** restores the score from before that bust.
+- High score is saved in `localStorage` and shown as **Best**.
 
 ## Play
 
