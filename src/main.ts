@@ -1,4 +1,4 @@
-import { cellCenter, playBurst } from "./fx";
+import { Board3D } from "./board3d";
 import { findEquation, formatEquation, type Operator } from "./math";
 import {
   EXAMPLE_BOARD,
@@ -8,12 +8,14 @@ import {
   generatePuzzle,
   isBoardEmpty,
   isBoardStuck,
+  isFullySolvable,
   type Board,
   type CellRef,
 } from "./puzzle";
+import { armAudioUnlock, playBust, playDeselect, playMiss, playPathWarn, playReform, playSelect, unlockAudio } from "./sfx";
 import "./style.css";
 
-type StatusKind = "idle" | "ready" | "hit" | "miss" | "win" | "stuck";
+type StatusKind = "idle" | "ready" | "hit" | "miss" | "win" | "stuck" | "path";
 
 function requireApp(): HTMLDivElement {
   const el = document.querySelector<HTMLDivElement>("#app");
@@ -30,13 +32,14 @@ let celebrating = false;
 let hintCells: CellRef[] = [];
 let statusKind: StatusKind = "idle";
 let statusText = "Joe’s starter board. Tap three blocks!";
-let dragging = false;
-let dragAdded = false;
 let pendingClear: CellRef[] | null = null;
+let press: { x: number; y: number } | null = null;
 let animating = false;
 let history: Array<{ board: Board; busts: number }> = [];
 let reforming: CellRef[] = [];
-let resizeObserver: ResizeObserver | null = null;
+let view: Board3D | null = null;
+let pathBlocked = false;
+let coachText = "";
 
 function sameCell(a: CellRef, b: CellRef): boolean {
   return a.row === b.row && a.col === b.col;
@@ -94,6 +97,7 @@ function addToSelection(cell: CellRef): boolean {
 
   hintCells = [];
   selection = [...selection, cell];
+  playSelect();
   if (selection.length < 3) {
     setStatus("idle", selection.length === 1 ? "Nice! Tap two more." : "One more block…");
   } else {
@@ -105,6 +109,7 @@ function addToSelection(cell: CellRef): boolean {
 function removeFromSelection(cell: CellRef): void {
   if (pendingClear || animating) return;
   selection = selection.filter((picked) => !sameCell(picked, cell));
+  playDeselect();
   if (selection.length === 0) {
     setStatus("idle", "Tap three number blocks.");
   } else {
@@ -112,34 +117,53 @@ function removeFromSelection(cell: CellRef): void {
   }
 }
 
+function hiddenCells(): CellRef[] {
+  if (pendingClear) return pendingClear;
+  if (reforming.length) return reforming;
+  return [];
+}
+
+function syncView(): void {
+  view?.sync(board, selection, hintCells, hiddenCells());
+}
+
 function newPuzzle(useExample = false): void {
   if (animating) return;
   board = useExample ? cloneBoard(EXAMPLE_BOARD) : generatePuzzle();
   busts = 0;
   celebrating = false;
-  dragging = false;
-  dragAdded = false;
+  press = null;
   history = [];
   reforming = [];
+  pathBlocked = false;
+  coachText = "";
   resetPicks(useExample ? "Joe’s starter board. Tap three blocks!" : "New puzzle! Tap three blocks.");
-  render();
+  syncView();
+  updateChrome();
+  drawLine();
 }
 
-function blockEl(cell: CellRef): HTMLElement | null {
-  return document.querySelector(`[data-row="${cell.row}"][data-col="${cell.col}"]`);
-}
+function drawLine(): void {
+  const svg = document.querySelector<SVGSVGElement>("#selection-line");
+  const wrap = document.querySelector<HTMLElement>(".board-wrap");
+  if (!svg || !wrap || !view) return;
 
-function burstOrigins(cells: CellRef[]): Array<{ x: number; y: number }> {
-  const wrap = document.querySelector<HTMLElement>(".board-wrap") ?? app;
-  return cells
-    .map((cell) => blockEl(cell))
-    .filter((el): el is HTMLElement => Boolean(el))
-    .map((el) => cellCenter(wrap, el));
+  const rect = wrap.getBoundingClientRect();
+  svg.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
+  svg.style.width = `${rect.width}px`;
+  svg.style.height = `${rect.height}px`;
+
+  const points = selection
+    .map((cell) => view?.project(cell))
+    .filter((point): point is { x: number; y: number } => Boolean(point))
+    .map((point) => `${point.x},${point.y}`);
+
+  svg.querySelector("polyline")?.setAttribute("points", points.join(" "));
 }
 
 async function undoBust(): Promise<void> {
   const previous = history.pop();
-  if (!previous || pendingClear || animating) return;
+  if (!previous || pendingClear || animating || !view) return;
 
   const returning: CellRef[] = [];
   for (let row = 0; row < 3; row++) {
@@ -155,28 +179,36 @@ async function undoBust(): Promise<void> {
   busts = previous.busts;
   celebrating = false;
   reforming = returning;
+  pathBlocked = false;
+  coachText = "";
   resetPicks("Bust undone. Try a different three blocks.");
-  render();
-
-  await playBurst(app, burstOrigins(returning), "implode");
+  syncView();
+  updateChrome();
+  drawLine();
+  playReform();
+  await view.implode(returning);
 
   reforming = [];
   animating = false;
-  document.querySelectorAll(".reforming").forEach((el) => el.classList.remove("reforming"));
+  syncView();
+  updateChrome();
+  drawLine();
 }
 
 async function tryOperator(op: Operator): Promise<void> {
   const values = selectionValues();
-  if (!values || animating) return;
+  if (!values || animating || !view) return;
 
   const equation = findEquation(values, op);
   if (!equation) {
-    setStatus("miss", "Not quite! Try another tool, or pick different blocks.");
+    playMiss();
+    view.shake();
+    flashMiss();
+    resetPicks("Not quite! Picks cleared — try three blocks again.");
+    setStatus("miss", "Not quite! Picks cleared — try three blocks again.");
+    syncView();
     updateChrome();
-    const boardEl = document.querySelector(".board");
-    boardEl?.classList.remove("shake");
-    void boardEl?.getBoundingClientRect();
-    boardEl?.classList.add("shake");
+    drawLine();
     return;
   }
 
@@ -185,25 +217,32 @@ async function tryOperator(op: Operator): Promise<void> {
   const bustText = formatEquation(equation);
   setStatus("hit", `${bustText}  ·  Bust!`);
   updateChrome();
-
-  for (const cell of pendingClear) {
-    blockEl(cell)?.classList.add("busting");
-  }
-
-  await playBurst(app, burstOrigins(pendingClear), "explode");
+  syncView();
+  drawLine();
+  playBust();
+  await view.explode(pendingClear);
 
   history.push({ board: cloneBoard(board), busts });
   board = clearCells(board, pendingClear);
   busts += 1;
   animating = false;
   reforming = [];
+  pathBlocked = !isBoardEmpty(board) && !isFullySolvable(board);
   resetPicks(
     isBoardEmpty(board) ? `${bustText}  ·  You busted every block!` : `${bustText}  ·  Great bust! Keep going.`,
   );
-  if (isBoardStuck(board) && !isBoardEmpty(board)) {
-    setStatus("stuck", `${bustText}. ${defaultIdleMessage()}`);
+  if (pathBlocked) {
+    coachText = isBoardStuck(board)
+      ? `${bustText} works, but leftover numbers can’t make another equation. Tap Undo!`
+      : `${bustText} works, but that order won’t finish the board. Tap Undo!`;
+    setStatus("path", coachText);
+    playPathWarn();
+  } else {
+    coachText = "";
   }
-  render();
+  syncView();
+  updateChrome();
+  drawLine();
 }
 
 function showHint(): void {
@@ -218,92 +257,9 @@ function showHint(): void {
   hintCells = trio.cells;
   selection = [];
   setStatus("idle", `Hint: ${formatEquation(trio.equation)} — can you find those blocks?`);
-  updateBoard();
+  syncView();
   updateChrome();
   drawLine();
-}
-
-function cellFromPoint(x: number, y: number): CellRef | null {
-  const el = document.elementFromPoint(x, y);
-  const button = el?.closest<HTMLButtonElement>("[data-row][data-col]");
-  if (!button || button.disabled) return null;
-  return {
-    row: Number(button.dataset.row),
-    col: Number(button.dataset.col),
-  };
-}
-
-function sizeCubes(): void {
-  const boardEl = document.querySelector<HTMLElement>("#board");
-  const cell = boardEl?.querySelector<HTMLElement>(".block");
-  if (!boardEl || !cell) return;
-  const width = cell.getBoundingClientRect().width;
-  const size = Math.max(28, Math.floor(width * 0.7));
-  boardEl.style.setProperty("--cube", `${size}px`);
-}
-
-function drawLine(): void {
-  const svg = document.querySelector<SVGSVGElement>("#selection-line");
-  const wrap = document.querySelector<HTMLElement>(".board-wrap");
-  if (!svg || !wrap) return;
-
-  const rect = wrap.getBoundingClientRect();
-  svg.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
-  svg.style.width = `${rect.width}px`;
-  svg.style.height = `${rect.height}px`;
-
-  const points = selection
-    .map((cell) => {
-      const button = blockEl(cell);
-      if (!button) return "";
-      const box = button.getBoundingClientRect();
-      return `${box.left - rect.left + box.width / 2},${box.top - rect.top + box.height / 2}`;
-    })
-    .filter(Boolean);
-
-  svg.querySelector("polyline")?.setAttribute("points", points.join(" "));
-}
-
-function cubeInner(value: number | null, selected: boolean, order: number): string {
-  if (value === null) return "";
-  return `
-    <span class="cube">
-      <span class="face top"></span>
-      <span class="face right"></span>
-      <span class="face front">
-        <span class="num">${value}</span>
-        ${selected ? `<span class="order">${order + 1}</span>` : ""}
-      </span>
-    </span>
-  `;
-}
-
-function updateBoard(): void {
-  const boardEl = document.querySelector<HTMLElement>("#board");
-  if (!boardEl) return;
-
-  boardEl.querySelectorAll<HTMLButtonElement>(".block").forEach((button) => {
-    const cell = {
-      row: Number(button.dataset.row),
-      col: Number(button.dataset.col),
-    };
-    const value = board[cell.row][cell.col];
-    const selected = isSelected(cell);
-    const order = selection.findIndex((picked) => sameCell(picked, cell));
-    const hinted = hintCells.some((picked) => sameCell(picked, cell));
-    const empty = value === null;
-    const isReforming = reforming.some((picked) => sameCell(picked, cell));
-
-    button.classList.toggle("empty", empty);
-    button.classList.toggle("selected", selected);
-    button.classList.toggle("hinted", hinted && !selected);
-    button.classList.toggle("reforming", isReforming);
-    button.disabled = empty || celebrating || animating;
-    button.setAttribute("aria-pressed", String(selected));
-    button.setAttribute("aria-label", empty ? "Cleared block" : `Number ${value}`);
-    button.innerHTML = `<span class="socket"></span>${cubeInner(value, selected, order)}`;
-  });
-  sizeCubes();
 }
 
 function updateChrome(): void {
@@ -342,11 +298,23 @@ function updateChrome(): void {
   if (undoBtn) undoBtn.disabled = history.length === 0 || Boolean(pendingClear) || animating;
 
   document.querySelector(".stage")?.classList.toggle("won", celebrating);
+  document.querySelector(".stage")?.classList.toggle("wrong-path", pathBlocked);
+  const undoBtnEl = document.querySelector<HTMLButtonElement>("[data-action='undo']");
+  undoBtnEl?.classList.toggle("nudge", pathBlocked && history.length > 0 && !animating);
+
+  const coach = document.querySelector<HTMLElement>("#coach");
+  if (coach) {
+    coach.hidden = !pathBlocked;
+    coach.textContent = pathBlocked ? coachText : "";
+  }
+
   const newBtn = document.querySelector<HTMLButtonElement>("[data-action='new']");
   if (newBtn) newBtn.textContent = celebrating ? "Play again" : "New puzzle";
 }
 
-function render(): void {
+function ensureShell(): void {
+  if (app.querySelector(".shell")) return;
+
   app.innerHTML = `
     <div class="shell">
       <header class="hero">
@@ -361,30 +329,11 @@ function render(): void {
 
       <div class="stage">
         <div class="board-wrap">
+          <div id="board3d" class="board3d" role="grid" aria-label="Number blocks"></div>
           <svg id="selection-line" class="selection-line" aria-hidden="true">
             <polyline points="" />
           </svg>
-          <div class="scene">
-            <div id="board" class="board" role="grid" aria-label="Number blocks">
-              ${board
-                .map((row, rowIndex) =>
-                  row
-                    .map(
-                      (_value, colIndex) => `
-                    <button
-                      type="button"
-                      class="block"
-                      data-row="${rowIndex}"
-                      data-col="${colIndex}"
-                      role="gridcell"
-                    ></button>
-                  `,
-                    )
-                    .join(""),
-                )
-                .join("")}
-            </div>
-          </div>
+          <p id="coach" class="coach" hidden role="status"></p>
         </div>
 
         <div class="tools">
@@ -407,106 +356,96 @@ function render(): void {
     </div>
   `;
 
+  const host = document.querySelector<HTMLElement>("#board3d");
+  if (!host) throw new Error("Missing #board3d");
+  view = new Board3D(host);
   bindEvents();
-  updateBoard();
+}
+
+function flashMiss(): void {
+  const wrap = document.querySelector<HTMLElement>(".board-wrap");
+  if (!wrap) return;
+  wrap.classList.remove("miss");
+  void wrap.offsetWidth;
+  wrap.classList.add("miss");
+}
+
+function tapCell(clientX: number, clientY: number): void {
+  if (celebrating || pendingClear || animating || !view) return;
+  const cell = view.pick(clientX, clientY);
+  if (!cell) return;
+  if (isSelected(cell)) removeFromSelection(cell);
+  else addToSelection(cell);
+  syncView();
   updateChrome();
-  requestAnimationFrame(() => {
-    sizeCubes();
-    drawLine();
-  });
+  drawLine();
 }
 
 function bindEvents(): void {
-  const boardEl = document.querySelector<HTMLElement>("#board");
   const wrap = document.querySelector<HTMLElement>(".board-wrap");
-  if (!boardEl) return;
+  if (!wrap) return;
 
-  resizeObserver?.disconnect();
-  if (wrap) {
-    resizeObserver = new ResizeObserver(() => {
-      sizeCubes();
-      drawLine();
-    });
-    resizeObserver.observe(wrap);
-  }
-
-  boardEl.addEventListener("pointerdown", (event) => {
+  wrap.addEventListener("pointerdown", (event) => {
+    unlockAudio();
     if (event.button !== 0 || celebrating || pendingClear || animating) return;
-    const cell = cellFromPoint(event.clientX, event.clientY);
-    if (!cell) return;
-
-    dragging = true;
-    dragAdded = false;
-    boardEl.setPointerCapture(event.pointerId);
-
-    if (!isSelected(cell)) {
-      if (addToSelection(cell)) {
-        dragAdded = true;
-        updateBoard();
-        updateChrome();
-        drawLine();
-      }
-    }
+    press = { x: event.clientX, y: event.clientY };
   });
 
-  boardEl.addEventListener("pointermove", (event) => {
-    if (!dragging) return;
-    const cell = cellFromPoint(event.clientX, event.clientY);
-    if (!cell || isSelected(cell)) return;
-    if (addToSelection(cell)) {
-      dragAdded = true;
-      updateBoard();
-      updateChrome();
-      drawLine();
-    }
+  wrap.addEventListener("pointerup", (event) => {
+    if (!press) return;
+    const dx = event.clientX - press.x;
+    const dy = event.clientY - press.y;
+    press = null;
+    if (Math.hypot(dx, dy) > 12) return;
+    tapCell(event.clientX, event.clientY);
   });
 
-  const endDrag = (event: PointerEvent) => {
-    if (!dragging) return;
-    dragging = false;
-    if (boardEl.hasPointerCapture(event.pointerId)) {
-      boardEl.releasePointerCapture(event.pointerId);
-    }
-  };
-
-  boardEl.addEventListener("pointerup", endDrag);
-  boardEl.addEventListener("pointercancel", endDrag);
-
-  boardEl.addEventListener("click", (event) => {
-    if (pendingClear || celebrating || animating) return;
-    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-row]");
-    if (!button) return;
-    const cell = { row: Number(button.dataset.row), col: Number(button.dataset.col) };
-    if (isSelected(cell) && !dragAdded) {
-      removeFromSelection(cell);
-      updateBoard();
-      updateChrome();
-      drawLine();
-    }
-    dragAdded = false;
+  wrap.addEventListener("pointercancel", () => {
+    press = null;
   });
 
   app.querySelectorAll<HTMLButtonElement>("[data-op]").forEach((button) => {
     button.addEventListener("click", () => {
+      unlockAudio();
       void tryOperator(button.dataset.op as Operator);
     });
   });
 
   app.querySelector("[data-action='clear']")?.addEventListener("click", () => {
+    unlockAudio();
     resetPicks("Picks cleared. Tap three blocks.");
-    updateBoard();
+    syncView();
     updateChrome();
     drawLine();
   });
   app.querySelector("[data-action='undo']")?.addEventListener("click", () => {
+    unlockAudio();
     void undoBust();
   });
-  app.querySelector("[data-action='hint']")?.addEventListener("click", showHint);
-  app.querySelector("[data-action='new']")?.addEventListener("click", () => newPuzzle(false));
+  app.querySelector("[data-action='hint']")?.addEventListener("click", () => {
+    unlockAudio();
+    showHint();
+  });
+  app.querySelector("[data-action='new']")?.addEventListener("click", () => {
+    unlockAudio();
+    newPuzzle(false);
+  });
 }
 
 window.addEventListener("resize", () => {
-  sizeCubes();
+  view?.resize();
   drawLine();
 });
-render();
+window.visualViewport?.addEventListener("resize", () => {
+  view?.resize();
+  drawLine();
+});
+
+armAudioUnlock();
+ensureShell();
+syncView();
+updateChrome();
+requestAnimationFrame(() => {
+  view?.resize();
+  drawLine();
+});
