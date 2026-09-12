@@ -4,8 +4,8 @@ import {
   EXAMPLE_BOARD,
   clearCells,
   cloneBoard,
-  findValidTrios,
   generatePuzzle,
+  pickSafeHint,
   isBoardEmpty,
   isBoardStuck,
   isFullySolvable,
@@ -379,14 +379,17 @@ function showHint(): void {
     updateChrome();
     return;
   }
-  const trios = findValidTrios(board);
-  if (trios.length === 0) {
-    setStatus("stuck", defaultIdleMessage());
+  const trio = pickSafeHint(board);
+  if (!trio) {
+    playDeny();
+    if (!isFullySolvable(board)) {
+      console.warn("Hint: current board is not fully solvable; no safe trio.");
+    }
+    setStatus("miss", "No safe hint right now — that path wouldn’t finish the board.");
     updateChrome();
     return;
   }
   hints -= 1;
-  const trio = trios[Math.floor(Math.random() * trios.length)];
   hintCells = trio.cells;
   selection = [];
   setStatus("idle", `Hint: ${formatEquation(trio.equation)} — find those blocks!`);

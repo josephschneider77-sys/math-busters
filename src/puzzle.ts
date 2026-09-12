@@ -36,13 +36,14 @@ function combinations<T>(items: readonly T[], k: number): T[][] {
   ];
 }
 
-export function findValidTrios(board: Board): Array<{
+export type TrioHint = {
   cells: [CellRef, CellRef, CellRef];
   equation: Equation;
-}> {
+};
+
+export function findValidTrios(board: Board): TrioHint[] {
   const cells = filledCells(board);
-  const trios: Array<{ cells: [CellRef, CellRef, CellRef]; equation: Equation }> =
-    [];
+  const trios: TrioHint[] = [];
 
   for (const trio of combinations(cells, 3)) {
     const values: [number, number, number] = [
@@ -59,6 +60,30 @@ export function findValidTrios(board: Board): Array<{
     }
   }
   return trios;
+}
+
+/** Valid equations whose leftover board is still fully clearable (or empty). */
+export function findSafeTrios(board: Board): TrioHint[] {
+  const safe: TrioHint[] = [];
+  for (const trio of findValidTrios(board)) {
+    const leftover = clearCells(board, trio.cells);
+    if (isFullySolvable(leftover)) safe.push(trio);
+  }
+  safe.sort((a, b) => leftoverCount(board, a) - leftoverCount(board, b));
+  return safe;
+}
+
+function leftoverCount(board: Board, trio: TrioHint): number {
+  return filledCells(clearCells(board, trio.cells)).length;
+}
+
+/** Prefer an immediate win, then any shortest remaining winning path. */
+export function pickSafeHint(board: Board): TrioHint | null {
+  const safe = findSafeTrios(board);
+  if (safe.length === 0) return null;
+  const shortest = leftoverCount(board, safe[0]);
+  const best = safe.filter((trio) => leftoverCount(board, trio) === shortest);
+  return best[Math.floor(Math.random() * best.length)] ?? null;
 }
 
 export function isFullySolvable(board: Board): boolean {
