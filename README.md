@@ -43,6 +43,10 @@ npm run preview
 
 Source of truth is the Origin repo. The public site is GitHub Pages from [`josephschneider77-sys/math-busters`](https://github.com/josephschneider77-sys/math-busters).
 
+## Play Store (PWA → AAB)
+
+Installable PWA (`display: standalone`, service worker, maskable icons). Package ID **`com.josephschneider77.mathbusters`**. See [`store/PLAY_STORE.md`](store/PLAY_STORE.md) — same PWABuilder path as Division Drop; **prefer WebView fallback** after TWA URL-bar issues on GitHub Project Pages.
+
 ## Stack
 
 Vite, TypeScript, and vanilla Three.js. No React / R3F. Juicy SFX are synthesized with the Web Audio API (unlocked on the first tap).
