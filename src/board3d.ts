@@ -15,9 +15,19 @@ const PALETTE = [
 
 const SPARKLE = ["#FFE600", "#FF4FD8", "#2EFFF0", "#fff8e7", "#B44CFF"] as const;
 
-const CELL = 1;
-const GAP = 0.18;
-const STEP = CELL + GAP;
+export type BoardSize = 3 | 6;
+
+export type BoardLayout = {
+  size: BoardSize;
+  step: number;
+  scale: number;
+};
+
+export function layoutFor(size: BoardSize): BoardLayout {
+  if (size >= 6) return { size: 6, step: 0.6, scale: 0.5 };
+  return { size: 3, step: 1.18, scale: 1 };
+}
+
 const FX_SECONDS = 0.82;
 const GRAVITY = new THREE.Vector3(0, -6.6, 0);
 
@@ -25,16 +35,13 @@ function sameCell(a: CellRef, b: CellRef): boolean {
   return a.row === b.row && a.col === b.col;
 }
 
-function cellIndex(row: number, col: number): number {
-  return row * 3 + col;
+export function cellWorld(row: number, col: number, layout: BoardLayout = layoutFor(3)): THREE.Vector3 {
+  const mid = (layout.size - 1) / 2;
+  return new THREE.Vector3((col - mid) * layout.step, (mid - row) * layout.step, 0);
 }
 
-export function cellWorld(row: number, col: number): THREE.Vector3 {
-  return new THREE.Vector3((col - 1) * STEP, (1 - row) * STEP, 0);
-}
-
-function candyColor(row: number, col: number): THREE.Color {
-  return new THREE.Color(PALETTE[cellIndex(row, col)]);
+function candyColor(row: number, col: number, size: number): THREE.Color {
+  return new THREE.Color(PALETTE[(row * size + col) % PALETTE.length]);
 }
 
 function roundedBox(width: number, height: number, depth: number, radius: number): THREE.ExtrudeGeometry {
@@ -129,8 +136,8 @@ class BlockCell {
   readonly badge: THREE.Mesh;
   readonly front: THREE.Mesh;
   readonly top: THREE.Mesh;
-  readonly bodyMat: THREE.MeshPhysicalMaterial;
-  readonly plateMat: THREE.MeshPhysicalMaterial;
+  readonly bodyMat: THREE.MeshStandardMaterial;
+  readonly plateMat: THREE.MeshStandardMaterial;
   readonly ringMat: THREE.MeshStandardMaterial;
   value: number | null = null;
   selected = false;
@@ -143,28 +150,45 @@ class BlockCell {
     row: number,
     col: number,
     geos: { block: THREE.BufferGeometry; socket: THREE.BufferGeometry; hit: THREE.BufferGeometry },
+    layout: BoardLayout,
+    lite: boolean,
   ) {
     this.row = row;
     this.col = col;
-    const color = candyColor(row, col);
-    const pos = cellWorld(row, col);
+    const color = candyColor(row, col, layout.size);
+    const pos = cellWorld(row, col, layout);
     this.root.position.copy(pos);
+    this.root.scale.setScalar(layout.scale);
 
-    this.bodyMat = new THREE.MeshPhysicalMaterial({
-      color,
-      emissive: color,
-      emissiveIntensity: 0.12,
-      roughness: 0.22,
-      metalness: 0.12,
-      clearcoat: 0.85,
-      clearcoatRoughness: 0.18,
-    });
-    this.plateMat = new THREE.MeshPhysicalMaterial({
-      color: "#fff8e7",
-      roughness: 0.32,
-      metalness: 0.05,
-      clearcoat: 0.45,
-    });
+    this.bodyMat = lite
+      ? new THREE.MeshStandardMaterial({
+          color,
+          emissive: color,
+          emissiveIntensity: 0.12,
+          roughness: 0.32,
+          metalness: 0.1,
+        })
+      : new THREE.MeshPhysicalMaterial({
+          color,
+          emissive: color,
+          emissiveIntensity: 0.12,
+          roughness: 0.22,
+          metalness: 0.12,
+          clearcoat: 0.85,
+          clearcoatRoughness: 0.18,
+        });
+    this.plateMat = lite
+      ? new THREE.MeshStandardMaterial({
+          color: "#fff8e7",
+          roughness: 0.38,
+          metalness: 0.04,
+        })
+      : new THREE.MeshPhysicalMaterial({
+          color: "#fff8e7",
+          roughness: 0.32,
+          metalness: 0.05,
+          clearcoat: 0.45,
+        });
     this.ringMat = new THREE.MeshStandardMaterial({
       color: "#ffe600",
       emissive: "#ff4fd8",
@@ -183,7 +207,7 @@ class BlockCell {
     });
     this.socket = new THREE.Mesh(geos.socket, socketMat);
     this.socket.position.z = -0.28;
-    this.socket.receiveShadow = true;
+    this.socket.receiveShadow = !lite;
     this.root.add(this.socket);
 
     const well = new THREE.Mesh(
@@ -194,8 +218,8 @@ class BlockCell {
     this.root.add(well);
 
     this.body = new THREE.Mesh(geos.block, this.bodyMat);
-    this.body.castShadow = true;
-    this.body.receiveShadow = true;
+    this.body.castShadow = !lite;
+    this.body.receiveShadow = !lite;
     this.block.add(this.body);
 
     const plate = new THREE.Mesh(new THREE.CircleGeometry(0.3, 28), this.plateMat);
@@ -221,19 +245,21 @@ class BlockCell {
     this.top.position.set(0, 0.41, 0.04);
     this.block.add(this.top);
 
-    const gloss = new THREE.Mesh(
-      new THREE.SphereGeometry(0.2, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.45),
-      new THREE.MeshPhysicalMaterial({
-        color: "#ffffff",
-        roughness: 0.08,
-        transparent: true,
-        opacity: 0.32,
-        depthWrite: false,
-      }),
-    );
-    gloss.position.set(0, 0.22, 0.18);
-    gloss.rotation.x = 0.45;
-    this.block.add(gloss);
+    if (!lite) {
+      const gloss = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.45),
+        new THREE.MeshPhysicalMaterial({
+          color: "#ffffff",
+          roughness: 0.08,
+          transparent: true,
+          opacity: 0.32,
+          depthWrite: false,
+        }),
+      );
+      gloss.position.set(0, 0.22, 0.18);
+      gloss.rotation.x = 0.45;
+      this.block.add(gloss);
+    }
 
     this.ring = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.045, 8, 28), this.ringMat);
     this.ring.position.z = 0.08;
@@ -325,6 +351,15 @@ class BlockCell {
     this.ringMat.emissiveIntensity = this.selected ? 0.7 : 0.45 + Math.sin(time * 6) * 0.35;
     this.ringMat.color.set(this.selected ? "#ffe600" : "#2efff0");
   }
+
+  dispose(): void {
+    this.root.traverse((obj: THREE.Object3D) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const mat of mats) mat.dispose();
+    });
+  }
 }
 
 export class Board3D {
@@ -351,6 +386,11 @@ export class Board3D {
   private frame = 0;
   private lastW = 0;
   private lastH = 0;
+  private layout: BoardLayout = layoutFor(3);
+  private stage = new THREE.Group();
+  private readonly socketGeo: THREE.BufferGeometry;
+  private readonly hitGeo: THREE.BufferGeometry;
+  private readonly keyLight: THREE.DirectionalLight;
   private readonly observer: ResizeObserver;
 
   constructor(host: HTMLElement) {
@@ -377,25 +417,15 @@ export class Board3D {
     this.blockGeo = roundedBox(0.9, 0.9, 0.68, 0.2);
     this.shardGeo = roundedBox(0.34, 0.34, 0.24, 0.1);
     this.sparkGeo = new THREE.OctahedronGeometry(0.1, 0);
-    const socketGeo = roundedBox(1.02, 1.02, 0.18, 0.2);
-    const hitGeo = new THREE.BoxGeometry(1.18, 1.18, 1.05);
+    this.socketGeo = roundedBox(1.02, 1.02, 0.18, 0.2);
+    this.hitGeo = new THREE.BoxGeometry(1.18, 1.18, 1.05);
 
     this.scene.add(this.root);
     this.scene.add(this.fx);
-    this.addLights();
-    this.addStage();
-
-    for (let row = 0; row < 3; row++) {
-      for (let col = 0; col < 3; col++) {
-        const cell = new BlockCell(row, col, {
-          block: this.blockGeo,
-          socket: socketGeo,
-          hit: hitGeo,
-        });
-        this.cells.push(cell);
-        this.root.add(cell.root);
-      }
-    }
+    this.root.add(this.stage);
+    this.keyLight = this.addLights();
+    this.rebuildStage();
+    this.rebuildCells();
 
     void document.fonts.ready.then(() => this.refreshLabels());
 
@@ -406,7 +436,43 @@ export class Board3D {
     this.frame = requestAnimationFrame(this.loop);
   }
 
-  private addLights(): void {
+  configure(size: BoardSize): void {
+    if (this.layout.size === size && this.cells.length === size * size) return;
+    this.clearFx();
+    this.layout = layoutFor(size);
+    this.rebuildCells();
+    this.rebuildStage();
+    this.applyPerf();
+    this.lastW = 0;
+    this.lastH = 0;
+    this.resize();
+  }
+
+  private applyPerf(): void {
+    const lite = this.layout.size >= 6;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, lite ? 1.2 : 1.6));
+    this.renderer.shadowMap.enabled = !lite;
+    this.keyLight.castShadow = !lite;
+  }
+
+  private rebuildCells(): void {
+    for (const cell of this.cells) {
+      this.root.remove(cell.root);
+      cell.dispose();
+    }
+    this.cells.length = 0;
+    const lite = this.layout.size >= 6;
+    const geos = { block: this.blockGeo, socket: this.socketGeo, hit: this.hitGeo };
+    for (let row = 0; row < this.layout.size; row++) {
+      for (let col = 0; col < this.layout.size; col++) {
+        const cell = new BlockCell(row, col, geos, this.layout, lite);
+        this.cells.push(cell);
+        this.root.add(cell.root);
+      }
+    }
+  }
+
+  private addLights(): THREE.DirectionalLight {
     this.scene.add(new THREE.AmbientLight("#fff4ff", 0.5));
     this.scene.add(new THREE.HemisphereLight("#ffe6fb", "#5c0f96", 0.72));
 
@@ -434,33 +500,61 @@ export class Board3D {
     const gold = new THREE.PointLight("#ffe600", 0.4, 24);
     gold.position.set(0, 7, 8);
     this.scene.add(gold);
+    return key;
   }
 
-  private addStage(): void {
+  private rebuildStage(): void {
+    while (this.stage.children.length) {
+      const child = this.stage.children[0];
+      this.stage.remove(child);
+      child.traverse((obj: THREE.Object3D) => {
+        const mesh = obj as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.geometry.dispose();
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const mat of mats) mat.dispose();
+      });
+    }
+
+    const { size, step, scale } = this.layout;
+    const lite = size >= 6;
+    const half = ((size - 1) / 2) * step;
+    const railX = half + 0.72 * Math.max(scale, 0.65);
+    const railH = size * step + 0.35;
+    const floorY = -(half + 0.68);
+    const floorW = size * step + 0.2;
+
     const railL = new THREE.Mesh(
-      roundedBox(0.34, 3.7, 1.2, 0.08),
-      new THREE.MeshPhysicalMaterial({
+      roundedBox(0.28 * Math.max(scale, 0.7), railH, 1.05, 0.08),
+      new THREE.MeshStandardMaterial({
         color: "#ff4fd8",
         emissive: "#ff4fd8",
         emissiveIntensity: 0.18,
         roughness: 0.4,
         metalness: 0.18,
-        clearcoat: 0.4,
       }),
     );
-    railL.position.set(-1.95, -0.08, -0.18);
-    railL.castShadow = true;
-    this.root.add(railL);
+    railL.position.set(-railX, -0.08, -0.18);
+    railL.castShadow = !lite;
+    this.stage.add(railL);
 
-    const railR = railL.clone();
-    (railR.material as THREE.MeshPhysicalMaterial).color.set("#2efff0");
-    (railR.material as THREE.MeshPhysicalMaterial).emissive.set("#2efff0");
-    railR.position.set(1.95, -0.08, -0.18);
-    this.root.add(railR);
+    const railR = new THREE.Mesh(
+      roundedBox(0.28 * Math.max(scale, 0.7), railH, 1.05, 0.08),
+      new THREE.MeshStandardMaterial({
+        color: "#2efff0",
+        emissive: "#2efff0",
+        emissiveIntensity: 0.18,
+        roughness: 0.4,
+        metalness: 0.18,
+      }),
+    );
+    railR.position.set(railX, -0.08, -0.18);
+    railR.castShadow = !lite;
+    this.stage.add(railR);
 
     const floor = new THREE.Mesh(
-      roundedBox(3.55, 0.3, 1.05, 0.08),
-      new THREE.MeshPhysicalMaterial({
+      roundedBox(floorW, 0.26 * Math.max(scale, 0.7), 1.05, 0.08),
+      new THREE.MeshStandardMaterial({
         color: "#b44cff",
         emissive: "#ff4fd8",
         emissiveIntensity: 0.12,
@@ -468,12 +562,12 @@ export class Board3D {
         metalness: 0.12,
       }),
     );
-    floor.position.set(0, -1.88, -0.14);
-    floor.receiveShadow = true;
-    this.root.add(floor);
+    floor.position.set(0, floorY, -0.14);
+    floor.receiveShadow = !lite;
+    this.stage.add(floor);
 
     const back = new THREE.Mesh(
-      new THREE.PlaneGeometry(5.2, 5.1),
+      new THREE.PlaneGeometry(floorW + 1.4, railH + 1.1),
       new THREE.MeshStandardMaterial({
         color: "#5c0f96",
         roughness: 0.88,
@@ -483,16 +577,18 @@ export class Board3D {
       }),
     );
     back.position.set(0, 0.05, -0.85);
-    back.receiveShadow = true;
-    this.root.add(back);
+    back.receiveShadow = !lite;
+    this.stage.add(back);
 
-    for (let i = 0; i < 4; i++) {
+    const lines = size + 1;
+    const lineH = size * step;
+    for (let i = 0; i < lines; i++) {
       const line = new THREE.Mesh(
-        new THREE.BoxGeometry(0.02, 3.45, 0.01),
-        new THREE.MeshBasicMaterial({ color: "#ffe600", transparent: true, opacity: 0.08 }),
+        new THREE.BoxGeometry(0.02, lineH, 0.01),
+        new THREE.MeshBasicMaterial({ color: "#ffe600", transparent: true, opacity: lite ? 0.05 : 0.08 }),
       );
-      line.position.set(-STEP * 1.5 + i * STEP, 0, -0.62);
-      this.root.add(line);
+      line.position.set(-half - step / 2 + i * step, 0, -0.62);
+      this.stage.add(line);
     }
   }
 
@@ -505,7 +601,8 @@ export class Board3D {
   }
 
   private numberLabel(value: number): THREE.CanvasTexture {
-    return this.label(`n:${value}`, String(value), "#3d1860", value >= 10 ? 118 : 150);
+    const font = value >= 100 ? 90 : value >= 10 ? 118 : 150;
+    return this.label(`n:${value}`, String(value), "#3d1860", font);
   }
 
   private orderLabel(order: number): THREE.CanvasTexture {
@@ -538,7 +635,7 @@ export class Board3D {
     }
     for (let i = 1; i <= 3; i++) this.orderLabel(i);
     for (const cell of this.cells) {
-      const value = board[cell.row][cell.col];
+      const value = board[cell.row]?.[cell.col] ?? null;
       const order = selection.findIndex((picked) => sameCell(picked, { row: cell.row, col: cell.col }));
       cell.setState(
         value,
@@ -568,7 +665,7 @@ export class Board3D {
   project(cell: CellRef): { x: number; y: number } | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
     if (rect.width <= 0) return null;
-    const v = cellWorld(cell.row, cell.col);
+    const v = cellWorld(cell.row, cell.col, this.layout);
     v.z += 0.55;
     v.project(this.camera);
     return {
@@ -604,11 +701,17 @@ export class Board3D {
     cancelAnimationFrame(this.frame);
     this.observer.disconnect();
     this.clearFx();
+    for (const cell of this.cells) {
+      this.root.remove(cell.root);
+      cell.dispose();
+    }
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.blockGeo.dispose();
     this.shardGeo.dispose();
     this.sparkGeo.dispose();
+    this.socketGeo.dispose();
+    this.hitGeo.dispose();
     for (const tex of this.labels.values()) tex.dispose();
   }
 
@@ -634,11 +737,12 @@ export class Board3D {
 
   private spawnShards(cells: CellRef[]): Shard[] {
     const list: Shard[] = [];
+    const lite = this.layout.size >= 6;
     for (const cell of cells) {
-      const origin = cellWorld(cell.row, cell.col);
+      const origin = cellWorld(cell.row, cell.col, this.layout);
       origin.z += 0.2;
-      const color = candyColor(cell.row, cell.col);
-      const chunks = 7;
+      const color = candyColor(cell.row, cell.col, this.layout.size);
+      const chunks = lite ? 4 : 7;
       for (let k = 0; k < chunks; k++) {
         const angle = Math.random() * Math.PI * 2;
         const speed = 2.1 + Math.random() * 3.3;
@@ -654,9 +758,9 @@ export class Board3D {
             emissiveIntensity: 0.18,
           }),
         );
-        body.castShadow = true;
+        body.castShadow = !lite;
         mesh.add(body);
-        if (k < 2) {
+        if (!lite && k < 2) {
           const sticker = new THREE.Mesh(
             new THREE.PlaneGeometry(0.22, 0.22),
             new THREE.MeshBasicMaterial({ color: "#fff8e7", toneMapped: false }),
@@ -685,7 +789,7 @@ export class Board3D {
           sparkle: false,
         });
       }
-      for (let k = 0; k < 8; k++) {
+      for (let k = 0; k < (lite ? 4 : 8); k++) {
         const angle = Math.random() * Math.PI * 2;
         const speed = 2.8 + Math.random() * 3.8;
         const spark = new THREE.Mesh(
@@ -718,7 +822,7 @@ export class Board3D {
 
   private spawnFlash(cells: CellRef[]): THREE.Mesh {
     const center = new THREE.Vector3();
-    for (const cell of cells) center.add(cellWorld(cell.row, cell.col));
+    for (const cell of cells) center.add(cellWorld(cell.row, cell.col, this.layout));
     center.multiplyScalar(1 / Math.max(1, cells.length));
     center.z += 0.55;
     const flash = new THREE.Mesh(
@@ -772,13 +876,17 @@ export class Board3D {
     this.camera.lookAt(0, -0.05, 0);
     this.camera.updateMatrixWorld(true);
 
+    const { size, step, scale } = this.layout;
+    const half = ((size - 1) / 2) * step;
+    const pad = size >= 6 ? 0.7 : 0.95;
+    const zFront = 0.75 * Math.max(scale, 0.7);
     const corners = [
-      new THREE.Vector3(-2.2, -2.15, -0.7),
-      new THREE.Vector3(2.2, -2.15, -0.7),
-      new THREE.Vector3(-2.2, 2.05, 0.75),
-      new THREE.Vector3(2.2, 2.05, 0.75),
-      new THREE.Vector3(-2.2, -2.15, 0.75),
-      new THREE.Vector3(2.2, 2.05, -0.7),
+      new THREE.Vector3(-half - pad, -half - pad, -0.7),
+      new THREE.Vector3(half + pad, -half - pad, -0.7),
+      new THREE.Vector3(-half - pad, half + pad, zFront),
+      new THREE.Vector3(half + pad, half + pad, zFront),
+      new THREE.Vector3(-half - pad, -half - pad, zFront),
+      new THREE.Vector3(half + pad, half + pad, -0.7),
     ];
     const inv = this.camera.matrixWorldInverse;
     let minX = Infinity;
@@ -799,11 +907,12 @@ export class Board3D {
     const cy = (minY + maxY) / 2;
     let viewW: number;
     let viewH: number;
+    const margin = size >= 6 ? 1.08 : 1.12;
     if (aspect >= contentW / contentH) {
-      viewH = contentH * 1.12;
+      viewH = contentH * margin;
       viewW = viewH * aspect;
     } else {
-      viewW = contentW * 1.12;
+      viewW = contentW * margin;
       viewH = viewW / aspect;
     }
     this.camera.left = cx - viewW / 2;

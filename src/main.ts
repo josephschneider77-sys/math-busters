@@ -1,5 +1,6 @@
 import { Board3D } from "./board3d";
 import { findEquation, formatEquation, type Operator } from "./math";
+import { formatOps, specForLevel, type LevelSpec } from "./progress";
 import {
   EXAMPLE_BOARD,
   clearCells,
@@ -84,6 +85,7 @@ function markTutorialSeen(): void {
 const app = requireApp();
 
 let screen: Screen = "title";
+let spec: LevelSpec = specForLevel(1);
 let board: Board = cloneBoard(EXAMPLE_BOARD);
 let selection: CellRef[] = [];
 let busts = 0;
@@ -141,12 +143,18 @@ function bumpHighScore(): void {
 
 function defaultIdleMessage(): string {
   if (isBoardEmpty(board)) return "You busted every block!";
-  if (isBoardStuck(board)) {
+  if (isBoardStuck(board, spec.ops)) {
     return history.length
       ? "Those leftover numbers don’t make an equation. Undo and try a different trio!"
       : "Those leftover numbers don’t make an equation. Try a new game!";
   }
   return "Tap three number blocks.";
+}
+
+function dealMessage(next: LevelSpec, fallback: string): string {
+  if (next.size === 6) return "Big 6×6 board! Still tap three blocks, then an op.";
+  if (next.ops.length === 2) return `Only ${formatOps(next.ops)} this level. Tap three blocks.`;
+  return fallback;
 }
 
 function resetPicks(message?: string): void {
@@ -179,7 +187,7 @@ function addToSelection(cell: CellRef): boolean {
   if (selection.length < 3) {
     setStatus("idle", selection.length === 1 ? "Nice! Tap two more." : "One more block…");
   } else {
-    setStatus("ready", "Pick ×  ÷  +  −");
+    setStatus("ready", `Pick ${formatOps(spec.ops)}`);
   }
   return true;
 }
@@ -207,7 +215,9 @@ function syncView(): void {
 
 function dealBoard(useExample = false, message?: string): void {
   dealGen += 1;
-  board = useExample ? cloneBoard(EXAMPLE_BOARD) : generatePuzzle();
+  spec = specForLevel(level);
+  view?.configure(spec.size);
+  board = useExample && spec.size === 3 ? cloneBoard(EXAMPLE_BOARD) : generatePuzzle(spec);
   busts = 0;
   celebrating = false;
   press = null;
@@ -315,9 +325,9 @@ async function undoBust(): Promise<void> {
   if (!previous || pendingClear || animating || !view) return;
 
   const returning: CellRef[] = [];
-  for (let row = 0; row < 3; row++) {
-    for (let col = 0; col < 3; col++) {
-      if (board[row][col] === null && previous.board[row][col] !== null) {
+  for (let row = 0; row < board.length; row++) {
+    for (let col = 0; col < board[row].length; col++) {
+      if (board[row][col] === null && previous.board[row]?.[col] !== null) {
         returning.push({ row, col });
       }
     }
@@ -348,6 +358,7 @@ async function undoBust(): Promise<void> {
 async function tryOperator(op: Operator): Promise<void> {
   const values = selectionValues();
   if (!values || animating || !view) return;
+  if (!spec.ops.includes(op)) return;
 
   const equation = findEquation(values, op);
   if (!equation) {
@@ -365,7 +376,7 @@ async function tryOperator(op: Operator): Promise<void> {
   const cells = selection.slice();
   const preview = clearCells(board, cells);
   const wins = isBoardEmpty(preview);
-  const stranded = !wins && !isFullySolvable(preview);
+  const stranded = !wins && !isFullySolvable(preview, spec.ops);
 
   pendingClear = cells;
   animating = true;
@@ -429,7 +440,8 @@ async function tryOperator(op: Operator): Promise<void> {
     if (gen !== dealGen) return;
     level += 1;
     dismissTutorial();
-    dealBoard(false, "Fresh board! Tap three blocks.");
+    const next = specForLevel(level);
+    dealBoard(false, dealMessage(next, "Fresh board! Tap three blocks."));
     return;
   }
 
@@ -449,10 +461,10 @@ function showHint(): void {
     updateChrome();
     return;
   }
-  const trio = pickSafeHint(board);
+  const trio = pickSafeHint(board, spec.ops);
   if (!trio) {
     playDeny();
-    if (!isFullySolvable(board)) {
+    if (!isFullySolvable(board, spec.ops)) {
       console.warn("Hint: current board is not fully solvable; no safe trio.");
     }
     setStatus("miss", "No safe hint right now — that path wouldn’t finish the board.");
@@ -495,9 +507,14 @@ function updateChrome(): void {
   if (hintsEl) hintsEl.textContent = String(hints);
 
   const open = selection.length === 3 && !celebrating;
+  const allowed = new Set(spec.ops);
   document.querySelector(".ops-bar")?.classList.toggle("open", open);
+  document.querySelector(".ops")?.classList.toggle("pair", spec.ops.length === 2);
   document.querySelectorAll<HTMLButtonElement>("[data-op]").forEach((button) => {
-    button.disabled = !open || animating;
+    const op = button.dataset.op as Operator;
+    const shown = allowed.has(op);
+    button.hidden = !shown;
+    button.disabled = !shown || !open || animating;
   });
 
   const undoBtn = document.querySelector<HTMLButtonElement>("[data-action='undo']");

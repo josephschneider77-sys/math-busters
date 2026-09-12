@@ -1,4 +1,10 @@
 import {
+  FIRST_SIX_LEVEL,
+  FIRST_TWO_OP_LEVEL,
+  TWO_OP_PAIRS,
+  specForLevel,
+} from "./progress";
+import {
   EXAMPLE_BOARD,
   clearCells,
   findSafeTrios,
@@ -15,8 +21,35 @@ function assert(ok: boolean, message: string): void {
 function leftoverSolvable(
   board: ReturnType<typeof generatePuzzle>,
   cells: Parameters<typeof clearCells>[1],
+  ops?: Parameters<typeof isFullySolvable>[1],
 ): boolean {
-  return isFullySolvable(clearCells(board, cells));
+  return isFullySolvable(clearCells(board, cells), ops);
+}
+
+function checkLadder(): void {
+  const lv1 = specForLevel(1);
+  assert(lv1.size === 3 && lv1.ops.length === 4, "lv1 should be 3×3 with all four ops");
+
+  const lv2 = specForLevel(2);
+  const lv5 = specForLevel(5);
+  assert(lv2.size === 3 && lv2.ops.length === 4, "lv2 should stay 3×3 all ops");
+  assert(lv5.size === 3 && lv5.ops.length === 4, "lv5 should stay 3×3 all ops");
+  assert(
+    lv5.factorMax > lv2.factorMax || lv5.addMax > lv2.addMax,
+    "early 3×3 levels should grow the number pool",
+  );
+
+  for (let level = FIRST_TWO_OP_LEVEL; level < FIRST_SIX_LEVEL; level++) {
+    const spec = specForLevel(level);
+    const pair = TWO_OP_PAIRS[level - FIRST_TWO_OP_LEVEL];
+    assert(spec.size === 3, `lv${level} should stay 3×3`);
+    assert(spec.ops.length === 2, `lv${level} should use exactly two ops`);
+    assert(spec.ops[0] === pair[0] && spec.ops[1] === pair[1], `lv${level} pair mismatch`);
+  }
+
+  const lv11 = specForLevel(FIRST_SIX_LEVEL);
+  assert(lv11.size === 6 && lv11.ops.length === 4, "lv11 should be 6×6 with all four ops");
+  assert(specForLevel(20).size === 6, "later levels should stay 6×6");
 }
 
 function checkExampleBoard(): void {
@@ -54,6 +87,7 @@ function checkExampleBoard(): void {
 function checkGeneratedBoards(): void {
   for (let n = 0; n < 8; n++) {
     const board = generatePuzzle();
+    assert(board.length === 3 && board[0].length === 3, "default generatePuzzle should be 3×3");
     assert(isFullySolvable(board), "generatePuzzle returned an unsolvable board");
     const safe = findSafeTrios(board);
     assert(safe.length > 0, "solvable generated board had no safe hint");
@@ -66,6 +100,47 @@ function checkGeneratedBoards(): void {
   }
 }
 
+function checkTwoOpLevels(): void {
+  for (const pair of TWO_OP_PAIRS) {
+    const spec = specForLevel(FIRST_TWO_OP_LEVEL + TWO_OP_PAIRS.indexOf(pair));
+    assert(spec.ops[0] === pair[0] && spec.ops[1] === pair[1], "two-op spec should match pair");
+    for (let n = 0; n < 3; n++) {
+      const board = generatePuzzle(spec);
+      assert(board.length === 3, "two-op boards should stay 3×3");
+      assert(isFullySolvable(board, spec.ops), `two-op ${pair.join("")} board was not solvable`);
+      const valid = findValidTrios(board, spec.ops);
+      assert(valid.length > 0, `two-op ${pair.join("")} board had no valid trios`);
+      for (const trio of valid) {
+        assert(spec.ops.includes(trio.equation.op), `two-op hint used illegal op ${trio.equation.op}`);
+      }
+      const hint = pickSafeHint(board, spec.ops);
+      if (!hint) throw new Error(`pickSafeHint missed a two-op ${pair.join("")} board`);
+      assert(spec.ops.includes(hint.equation.op), "safe hint used an illegal op");
+      assert(leftoverSolvable(board, hint.cells, spec.ops), "two-op hint stranded leftovers");
+    }
+  }
+}
+
+function checkSixBySix(): void {
+  const spec = specForLevel(FIRST_SIX_LEVEL);
+  for (let n = 0; n < 3; n++) {
+    const board = generatePuzzle(spec);
+    assert(board.length === 6 && board[0].length === 6, "lv11+ boards should be 6×6");
+    assert(
+      board.every((row) => row.every((value) => value !== null)),
+      "6×6 board should start full",
+    );
+    assert(isFullySolvable(board, spec.ops), "6×6 generatePuzzle returned an unsolvable board");
+    const hint = pickSafeHint(board, spec.ops);
+    if (!hint) throw new Error("pickSafeHint missed a 6×6 board");
+    assert(spec.ops.includes(hint.equation.op), "6×6 hint used an illegal op");
+    assert(leftoverSolvable(board, hint.cells, spec.ops), "6×6 hint stranded leftovers");
+  }
+}
+
+checkLadder();
 checkExampleBoard();
 checkGeneratedBoards();
-console.log("puzzle hint checks ok");
+checkTwoOpLevels();
+checkSixBySix();
+console.log("puzzle hint + progression checks ok");

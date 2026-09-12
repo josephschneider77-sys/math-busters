@@ -59,8 +59,9 @@ export function formatEquation(equation: Equation): string {
 
 export function anyValidEquation(
   values: readonly [number, number, number],
+  ops: readonly Operator[] = OPERATORS,
 ): Equation | null {
-  for (const op of OPERATORS) {
+  for (const op of ops) {
     const found = findEquation(values, op);
     if (found) return found;
   }
