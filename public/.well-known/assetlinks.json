@@ -7,7 +7,10 @@
       "namespace": "android_app",
       "package_name": "com.josephschneider77.mathbusters",
       "sha256_cert_fingerprints": [
-        "86:0A:E7:16:8B:B8:70:A7:5F:6C:27:B5:B4:11:5D:BA:DD:30:38:F1:E1:99:C2:88:25:B7:0B:43:25:18:BB:36"
+        "86:0A:E7:16:8B:B8:70:A7:5F:6C:27:B5:B4:11:5D:BA:DD:30:38:F1:E1:99:C2:88:25:B7:0B:43:25:18:BB:36",
+        "C2:56:28:36:D9:94:EB:0B:77:69:FE:CF:7A:34:DD:58:B7:CD:71:98:9A:5B:14:92:29:0F:9A:EF:F7:58:00:CE",
+        "A7:08:D7:20:B6:20:8A:FD:E2:D0:C4:01:9E:42:59:6C:73:8E:86:E3:8C:BB:82:F0:1A:EC:FF:28:85:3F:F9:D0",
+        "D3:7E:A4:3B:21:66:C7:A6:EE:55:4F:6D:20:90:1B:C2:E3:F2:01:36:1E:54:83:54:D3:FE:64:B7:07:BF:8A:2A"
       ]
     }
   }
