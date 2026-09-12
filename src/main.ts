@@ -309,9 +309,9 @@ async function tryOperator(op: Operator): Promise<void> {
   await view.explode(cells);
 
   if (stranded) {
-    coachText = `${bustText} works, but wrong order — those blocks came back!`;
+    coachText = "That combination works but won’t complete the puzzle";
     pathBlocked = true;
-    setStatus("path", coachText);
+    setStatus("path", `${bustText} · ${coachText}`);
     updateChrome();
     playPathWarn();
     await wait(240);
@@ -325,7 +325,7 @@ async function tryOperator(op: Operator): Promise<void> {
     animating = false;
     celebrating = false;
     resetPicks(coachText);
-    setStatus("path", coachText);
+    setStatus("path", `${bustText} · ${coachText}`);
     syncView();
     updateChrome();
     drawLine();

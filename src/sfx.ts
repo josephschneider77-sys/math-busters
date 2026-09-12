@@ -215,7 +215,7 @@ export function playMiss(): void {
   tap.stop(t + 0.16);
 }
 
-/** Gentle coach chime — math was true, but that order can’t finish the board. */
+/** Gentle coach chime — math was true, but that combo won’t complete the puzzle. */
 export function playPathWarn(): void {
   if (!ready()) return;
   const t = getCtx()!.currentTime;
