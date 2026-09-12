@@ -1,6 +1,6 @@
 # Math Busters
 
-A cozy number-block puzzle for kids. Line up **three numbers**, pick a math tool (**× ÷ + −**), and bust the blocks when they make a true equation.
+A cozy 3D number-block puzzle for kids. Line up **three numbers**, pick a math tool (**× ÷ + −**), and bust the blocks when they make a true equation. Correct busts pop with a colorful burst; **Undo** plays that burst in reverse as the tiles reform.
 
 Inspired by Joe’s handwritten design paper: clear every number from a 3×3 board. Example first move on the starter puzzle: `4 × 5 = 20`.
 
