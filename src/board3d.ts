@@ -878,7 +878,8 @@ export class Board3D {
 
     const { size, step, scale } = this.layout;
     const half = ((size - 1) / 2) * step;
-    const pad = size >= 6 ? 0.7 : 0.95;
+    const wideSix = size >= 6 && this.host.clientWidth >= 600;
+    const pad = size >= 6 ? (wideSix ? 0.48 : 0.7) : 0.95;
     const zFront = 0.75 * Math.max(scale, 0.7);
     const corners = [
       new THREE.Vector3(-half - pad, -half - pad, -0.7),
@@ -907,7 +908,7 @@ export class Board3D {
     const cy = (minY + maxY) / 2;
     let viewW: number;
     let viewH: number;
-    const margin = size >= 6 ? 1.08 : 1.12;
+    const margin = size >= 6 ? (wideSix ? 1.03 : 1.08) : 1.12;
     if (aspect >= contentW / contentH) {
       viewH = contentH * margin;
       viewW = viewH * aspect;

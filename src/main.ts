@@ -213,9 +213,17 @@ function syncView(): void {
   view?.sync(board, selection, hintCells, hiddenCells());
 }
 
+function applyBoardShell(): void {
+  const shell = document.querySelector(".shell");
+  if (!shell) return;
+  shell.classList.toggle("board-6", spec.size === 6);
+  shell.setAttribute("data-board-size", String(spec.size));
+}
+
 function dealBoard(useExample = false, message?: string): void {
   dealGen += 1;
   spec = specForLevel(level);
+  applyBoardShell();
   view?.configure(spec.size);
   board = useExample && spec.size === 3 ? cloneBoard(EXAMPLE_BOARD) : generatePuzzle(spec);
   busts = 0;
@@ -481,6 +489,7 @@ function showHint(): void {
 }
 
 function updateChrome(): void {
+  applyBoardShell();
   const splash = document.querySelector<HTMLElement>("#splash");
   const play = document.querySelector<HTMLElement>("#play");
   if (splash) splash.hidden = screen !== "title";
@@ -673,3 +682,17 @@ requestAnimationFrame(() => {
   view?.resize();
   drawLine();
 });
+
+if (import.meta.env.DEV) {
+  (window as Window & { __jumpLevel?: (n: number) => void }).__jumpLevel = (n: number) => {
+    screen = "play";
+    level = Math.max(1, Math.floor(n));
+    updateChrome();
+    ensureView();
+    dealBoard(level <= 1, dealMessage(specForLevel(level), "Tap three blocks."));
+    requestAnimationFrame(() => {
+      view?.resize();
+      drawLine();
+    });
+  };
+}
