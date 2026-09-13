@@ -61,6 +61,27 @@ button:disabled { cursor: default; }
     var(--purple);
 }
 
+/*
+ * Tablet scale rule: 6×6 and 9×9 leave the 430px phone column on wide
+ * viewports so the square grid can grow horizontally and vertically.
+ * 3×3 stays phone-capped.
+ */
+@media (min-width: 640px) {
+  .shell.board-wide {
+    width: min(100%, 960px);
+  }
+
+  .shell.board-wide .topbar {
+    padding-top: calc(6px + env(safe-area-inset-top, 0px));
+    padding-bottom: 4px;
+  }
+
+  .shell.board-wide .ops-bar {
+    padding-top: 4px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 .splash {
   position: absolute;
   inset: 0;

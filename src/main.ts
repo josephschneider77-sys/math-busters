@@ -152,6 +152,7 @@ function defaultIdleMessage(): string {
 }
 
 function dealMessage(next: LevelSpec, fallback: string): string {
+  if (next.size === 9) return "Huge 9×9 board! Still tap three blocks, then an op.";
   if (next.size === 6) return "Big 6×6 board! Still tap three blocks, then an op.";
   if (next.ops.length === 2) return `Only ${formatOps(next.ops)} this level. Tap three blocks.`;
   return fallback;
@@ -213,9 +214,24 @@ function syncView(): void {
   view?.sync(board, selection, hintCells, hiddenCells());
 }
 
+function applyShellSize(size: LevelSpec["size"]): void {
+  document.querySelector(".shell")?.classList.toggle("board-wide", size >= 6);
+}
+
+function startingLevel(): number {
+  try {
+    const raw = new URLSearchParams(window.location.search).get("level");
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+  } catch {
+    return 1;
+  }
+}
+
 function dealBoard(useExample = false, message?: string): void {
   dealGen += 1;
   spec = specForLevel(level);
+  applyShellSize(spec.size);
   view?.configure(spec.size);
   board = useExample && spec.size === 3 ? cloneBoard(EXAMPLE_BOARD) : generatePuzzle(spec);
   busts = 0;
@@ -246,7 +262,7 @@ function startRun(): void {
   screen = "play";
   score = 0;
   hints = START_HINTS;
-  level = 1;
+  level = startingLevel();
   animating = false;
   updateChrome();
   ensureView();
