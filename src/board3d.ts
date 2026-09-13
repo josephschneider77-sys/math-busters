@@ -1,4 +1,10 @@
 import * as THREE from "three";
+import {
+  cameraFitInsets,
+  layoutFor,
+  layoutsEqual,
+  type BoardLayout,
+} from "./layout";
 import type { Board, CellRef } from "./puzzle";
 
 const PALETTE = [
@@ -15,18 +21,9 @@ const PALETTE = [
 
 const SPARKLE = ["#FFE600", "#FF4FD8", "#2EFFF0", "#fff8e7", "#B44CFF"] as const;
 
+export type { BoardLayout } from "./layout";
 export type BoardSize = 3 | 6;
-
-export type BoardLayout = {
-  size: BoardSize;
-  step: number;
-  scale: number;
-};
-
-export function layoutFor(size: BoardSize): BoardLayout {
-  if (size >= 6) return { size: 6, step: 0.6, scale: 0.5 };
-  return { size: 3, step: 1.18, scale: 1 };
-}
+export { layoutFor } from "./layout";
 
 const FX_SECONDS = 0.82;
 const GRAVITY = new THREE.Vector3(0, -6.6, 0);
@@ -437,15 +434,34 @@ export class Board3D {
   }
 
   configure(size: BoardSize): void {
-    if (this.layout.size === size && this.cells.length === size * size) return;
+    const next = layoutFor(size, this.host.clientWidth);
+    const sameGrid = this.layout.size === size && this.cells.length === size * size;
+    if (sameGrid && layoutsEqual(this.layout, next)) {
+      this.lastW = 0;
+      this.lastH = 0;
+      this.resize();
+      return;
+    }
     this.clearFx();
-    this.layout = layoutFor(size);
-    this.rebuildCells();
-    this.rebuildStage();
+    this.adoptLayout(next, !sameGrid);
     this.applyPerf();
     this.lastW = 0;
     this.lastH = 0;
     this.resize();
+  }
+
+  /** Move/scale existing tiles when only step/scale change (tablet vs phone). */
+  private adoptLayout(next: BoardLayout, rebuild: boolean): void {
+    this.layout = next;
+    if (rebuild) {
+      this.rebuildCells();
+    } else {
+      for (const cell of this.cells) {
+        cell.root.position.copy(cellWorld(cell.row, cell.col, next));
+        cell.root.scale.setScalar(next.scale);
+      }
+    }
+    this.rebuildStage();
   }
 
   private applyPerf(): void {
@@ -692,6 +708,10 @@ export class Board3D {
     if (width === this.lastW && height === this.lastH) return;
     this.lastW = width;
     this.lastH = height;
+    const next = layoutFor(this.layout.size, width);
+    if (!layoutsEqual(this.layout, next)) {
+      this.adoptLayout(next, false);
+    }
     this.renderer.setSize(width, height, false);
     this.fitCamera(width / height);
   }
@@ -878,7 +898,7 @@ export class Board3D {
 
     const { size, step, scale } = this.layout;
     const half = ((size - 1) / 2) * step;
-    const pad = size >= 6 ? 0.7 : 0.95;
+    const { pad, margin } = cameraFitInsets(size, this.lastW);
     const zFront = 0.75 * Math.max(scale, 0.7);
     const corners = [
       new THREE.Vector3(-half - pad, -half - pad, -0.7),
@@ -907,7 +927,6 @@ export class Board3D {
     const cy = (minY + maxY) / 2;
     let viewW: number;
     let viewH: number;
-    const margin = size >= 6 ? 1.08 : 1.12;
     if (aspect >= contentW / contentH) {
       viewH = contentH * margin;
       viewW = viewH * aspect;
