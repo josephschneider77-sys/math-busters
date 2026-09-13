@@ -5,6 +5,7 @@ import {
   layoutsEqual,
   type BoardLayout,
 } from "./layout";
+import type { BoardSize } from "./progress";
 import type { Board, CellRef } from "./puzzle";
 
 const PALETTE = [
@@ -22,7 +23,7 @@ const PALETTE = [
 const SPARKLE = ["#FFE600", "#FF4FD8", "#2EFFF0", "#fff8e7", "#B44CFF"] as const;
 
 export type { BoardLayout } from "./layout";
-export type BoardSize = 3 | 6;
+export type { BoardSize } from "./progress";
 export { layoutFor } from "./layout";
 
 const FX_SECONDS = 0.82;
@@ -466,7 +467,8 @@ export class Board3D {
 
   private applyPerf(): void {
     const lite = this.layout.size >= 6;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, lite ? 1.2 : 1.6));
+    const ultra = this.layout.size >= 9;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, ultra ? 1 : lite ? 1.2 : 1.6));
     this.renderer.shadowMap.enabled = !lite;
     this.keyLight.castShadow = !lite;
   }
@@ -758,25 +760,30 @@ export class Board3D {
   private spawnShards(cells: CellRef[]): Shard[] {
     const list: Shard[] = [];
     const lite = this.layout.size >= 6;
+    const ultra = this.layout.size >= 9;
     for (const cell of cells) {
       const origin = cellWorld(cell.row, cell.col, this.layout);
       origin.z += 0.2;
       const color = candyColor(cell.row, cell.col, this.layout.size);
-      const chunks = lite ? 4 : 7;
+      const chunks = ultra ? 2 : lite ? 4 : 7;
       for (let k = 0; k < chunks; k++) {
         const angle = Math.random() * Math.PI * 2;
         const speed = 2.1 + Math.random() * 3.3;
         const mesh = new THREE.Group();
         const body = new THREE.Mesh(
           this.shardGeo,
-          new THREE.MeshPhysicalMaterial({
-            color: color.clone().offsetHSL(0, 0, (Math.random() - 0.5) * 0.12),
-            roughness: 0.24,
-            metalness: 0.12,
-            clearcoat: 0.7,
-            emissive: color,
-            emissiveIntensity: 0.18,
-          }),
+          ultra
+            ? new THREE.MeshBasicMaterial({
+                color: color.clone().offsetHSL(0, 0, (Math.random() - 0.5) * 0.12),
+              })
+            : new THREE.MeshPhysicalMaterial({
+                color: color.clone().offsetHSL(0, 0, (Math.random() - 0.5) * 0.12),
+                roughness: 0.24,
+                metalness: 0.12,
+                clearcoat: 0.7,
+                emissive: color,
+                emissiveIntensity: 0.18,
+              }),
         );
         body.castShadow = !lite;
         mesh.add(body);
@@ -809,7 +816,7 @@ export class Board3D {
           sparkle: false,
         });
       }
-      for (let k = 0; k < (lite ? 4 : 8); k++) {
+      for (let k = 0; k < (ultra ? 2 : lite ? 4 : 8); k++) {
         const angle = Math.random() * Math.PI * 2;
         const speed = 2.8 + Math.random() * 3.8;
         const spark = new THREE.Mesh(

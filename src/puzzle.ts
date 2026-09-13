@@ -13,7 +13,10 @@ export const EXAMPLE_BOARD: Board = [
 export type CellRef = { row: number; col: number };
 
 export function cloneBoard(board: Board): Board {
-  return board.map((row) => row.slice());
+  const next = board.map((row) => row.slice());
+  const seeds = seedTrios.get(board);
+  if (seeds) seedTrios.set(next, seeds);
+  return next;
 }
 
 export function emptyBoard(size: number): Board {
@@ -31,16 +34,6 @@ export function filledCells(board: Board): Array<CellRef & { value: number }> {
   return cells;
 }
 
-function combinations<T>(items: readonly T[], k: number): T[][] {
-  if (k === 0) return [[]];
-  if (items.length < k) return [];
-  const [head, ...tail] = items;
-  return [
-    ...combinations(tail, k - 1).map((rest) => [head, ...rest]),
-    ...combinations(tail, k),
-  ];
-}
-
 export type TrioHint = {
   cells: [CellRef, CellRef, CellRef];
   equation: Equation;
@@ -52,19 +45,21 @@ export function findValidTrios(
 ): TrioHint[] {
   const cells = filledCells(board);
   const trios: TrioHint[] = [];
-
-  for (const trio of combinations(cells, 3)) {
-    const values: [number, number, number] = [
-      trio[0].value,
-      trio[1].value,
-      trio[2].value,
-    ];
-    const equation = anyValidEquation(values, ops);
-    if (equation) {
-      trios.push({
-        cells: [trio[0], trio[1], trio[2]],
-        equation,
-      });
+  const n = cells.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      for (let k = j + 1; k < n; k++) {
+        const equation = anyValidEquation(
+          [cells[i].value, cells[j].value, cells[k].value],
+          ops,
+        );
+        if (equation) {
+          trios.push({
+            cells: [cells[i], cells[j], cells[k]],
+            equation,
+          });
+        }
+      }
     }
   }
   return trios;
@@ -88,12 +83,30 @@ function leftoverCount(board: Board, trio: TrioHint): number {
   return filledCells(clearCells(board, trio.cells)).length;
 }
 
+/** Packed-deal covers, cloned with the board so 9×9 hints stay cheap. */
+const seedTrios = new WeakMap<Board, TrioHint[]>();
+
+function intactSeeds(board: Board, seeds: TrioHint[]): TrioHint[] {
+  return seeds.filter((trio) => trio.cells.every((cell) => board[cell.row][cell.col] !== null));
+}
+
+function leftoverIsSeedCover(board: Board, seeds: TrioHint[]): boolean {
+  const intact = intactSeeds(board, seeds);
+  const cover = new Set(intact.flatMap((trio) => trio.cells.map((cell) => `${cell.row},${cell.col}`)));
+  const filled = filledCells(board);
+  return filled.length === cover.size && filled.every((cell) => cover.has(`${cell.row},${cell.col}`));
+}
+
 type CoverHit = {
   cover: TrioHint[] | null;
   unknown: boolean;
 };
 
-const COVER_NODE_LIMIT = 80_000;
+function coverNodeLimit(cellCount: number): number {
+  if (cellCount >= 81) return 300_000;
+  if (cellCount >= 36) return 120_000;
+  return 80_000;
+}
 
 /** One exact cover of remaining cells by valid (allowed-op) trios. */
 function solveCover(board: Board, ops: readonly Operator[]): CoverHit {
@@ -126,10 +139,11 @@ function solveCover(board: Board, ops: readonly Operator[]): CoverHit {
   const picked: number[] = [];
   let nodes = 0;
   let aborted = false;
+  const limit = coverNodeLimit(n);
 
   function search(uncovered: bigint): boolean {
     if (uncovered === 0n) return true;
-    if (++nodes > COVER_NODE_LIMIT) {
+    if (++nodes > limit) {
       aborted = true;
       return false;
     }
@@ -176,16 +190,32 @@ export function pickSafeHint(
   board: Board,
   ops: readonly Operator[] = OPERATORS,
 ): TrioHint | null {
+  const seeds = seedTrios.get(board);
+  if (seeds && leftoverIsSeedCover(board, seeds)) {
+    const intact = intactSeeds(board, seeds);
+    if (intact.length === 0) return null;
+    return intact[Math.floor(Math.random() * intact.length)] ?? null;
+  }
+
   const hit = solveCover(board, ops);
-  if (!hit.cover || hit.cover.length === 0) return null;
-  if (hit.cover.length === 1) return hit.cover[0];
-  return hit.cover[Math.floor(Math.random() * hit.cover.length)] ?? null;
+  if (hit.cover && hit.cover.length > 0) {
+    if (hit.cover.length === 1) return hit.cover[0];
+    return hit.cover[Math.floor(Math.random() * hit.cover.length)] ?? null;
+  }
+  if (seeds) {
+    const intact = intactSeeds(board, seeds);
+    if (intact.length) return intact[Math.floor(Math.random() * intact.length)] ?? null;
+  }
+  return null;
 }
 
 export function isFullySolvable(
   board: Board,
   ops: readonly Operator[] = OPERATORS,
 ): boolean {
+  const seeds = seedTrios.get(board);
+  if (seeds && leftoverIsSeedCover(board, seeds)) return true;
+
   const hit = solveCover(board, ops);
   if (hit.unknown) return true;
   return hit.cover !== null;
@@ -239,11 +269,47 @@ function boardFromNumbers(numbers: number[], size: number): Board {
 }
 
 /**
+ * Place each kid equation on three shuffled cells. Those triples stay pickable
+ * (any three cells), so a winning path always exists — needed for 9×9, where
+ * a full exact-cover verify on 81 cells would hitch deal time.
+ */
+function generatePackedPuzzle(spec: LevelSpec): Board {
+  const size = spec.size;
+  const count = (size * size) / 3;
+  const slots = shuffle(
+    Array.from({ length: size * size }, (_, i) => ({
+      row: Math.floor(i / size),
+      col: i % size,
+    })),
+  );
+  const board = emptyBoard(size);
+  const seeds: TrioHint[] = [];
+  for (let t = 0; t < count; t++) {
+    const eq = makeKidEquation(spec);
+    const values = shuffle([eq.a, eq.b, eq.c]);
+    const cells: [CellRef, CellRef, CellRef] = [
+      slots[t * 3],
+      slots[t * 3 + 1],
+      slots[t * 3 + 2],
+    ];
+    for (let k = 0; k < 3; k++) {
+      board[cells[k].row][cells[k].col] = values[k];
+    }
+    seeds.push({ cells, equation: eq });
+  }
+  seedTrios.set(board, seeds);
+  return board;
+}
+
+/**
  * Pack `size² / 3` kid equations using only `spec.ops`, then shuffle onto the grid.
  * The packed triples stay pickable (any three cells), so a winning path always exists.
+ * 3×3 / 6×6 still try a fully shuffled number pool first for more overlapping busts.
  */
 export function generatePuzzle(spec: LevelSpec = specForLevel(3)): Board {
   const size = spec.size;
+  if (size >= 9) return generatePackedPuzzle(spec);
+
   const count = (size * size) / 3;
   for (let attempt = 0; attempt < 40; attempt++) {
     const equations = Array.from({ length: count }, () => makeKidEquation(spec));
@@ -251,12 +317,7 @@ export function generatePuzzle(spec: LevelSpec = specForLevel(3)): Board {
     const board = boardFromNumbers(numbers, size);
     if (isFullySolvable(board, spec.ops)) return board;
   }
-  const packed = Array.from({ length: count }, () => makeKidEquation(spec)).flatMap((eq) => [
-    eq.a,
-    eq.b,
-    eq.c,
-  ]);
-  return boardFromNumbers(packed, size);
+  return generatePackedPuzzle(spec);
 }
 
 export function clearCells(board: Board, cells: readonly CellRef[]): Board {

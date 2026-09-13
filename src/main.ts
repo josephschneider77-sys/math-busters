@@ -152,6 +152,7 @@ function defaultIdleMessage(): string {
 }
 
 function dealMessage(next: LevelSpec, fallback: string): string {
+  if (next.size === 9) return "Huge 9×9 board! Still tap three blocks, then an op.";
   if (next.size === 6) return "Big 6×6 board! Still tap three blocks, then an op.";
   if (next.ops.length === 2) return `Only ${formatOps(next.ops)} this level. Tap three blocks.`;
   return fallback;
@@ -214,7 +215,7 @@ function syncView(): void {
 }
 
 function applyShellSize(size: LevelSpec["size"]): void {
-  document.querySelector(".shell")?.classList.toggle("board-6", size >= 6);
+  document.querySelector(".shell")?.classList.toggle("board-wide", size >= 6);
 }
 
 function startingLevel(): number {

@@ -1,6 +1,6 @@
 import { OPERATORS, type Operator } from "./math";
 
-export type BoardSize = 3 | 6;
+export type BoardSize = 3 | 6 | 9;
 
 export type LevelSpec = {
   level: number;
@@ -18,7 +18,8 @@ export type LevelSpec = {
  *   Lv 1      — 3×3, all four ops, starter example board (small numbers)
  *   Lv 2–5    — 3×3, all four ops, number pool / max values step up (~3rd grade)
  *   Lv 6–10   — 3×3, exactly two ops, cycling −÷, +×, −×, +÷, ×÷
- *   Lv 11+    — 6×6, all four ops; clear all 36 cells (12 three-number busts)
+ *   Lv 11–14  — 6×6, all four ops; clear all 36 cells (12 three-number busts)
+ *   Lv 15+    — 9×9, all four ops; clear all 81 cells (27 three-number busts)
  *
  * Generation, hints, and stranded-bust checks use only the current ops + size.
  */
@@ -32,6 +33,7 @@ export const TWO_OP_PAIRS: readonly (readonly Operator[])[] = [
 
 export const FIRST_TWO_OP_LEVEL = 6;
 export const FIRST_SIX_LEVEL = 11;
+export const FIRST_NINE_LEVEL = 15;
 
 const BIGGER_3X3 = [
   { factorMin: 2, factorMax: 6, addMin: 1, addMax: 8 },
@@ -73,9 +75,21 @@ export function specForLevel(level: number): LevelSpec {
     };
   }
 
+  if (n < FIRST_NINE_LEVEL) {
+    return {
+      level: n,
+      size: 6,
+      ops: OPERATORS,
+      factorMin: 2,
+      factorMax: 10,
+      addMin: 2,
+      addMax: 16,
+    };
+  }
+
   return {
     level: n,
-    size: 6,
+    size: 9,
     ops: OPERATORS,
     factorMin: 2,
     factorMax: 10,

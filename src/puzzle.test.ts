@@ -1,4 +1,5 @@
 import {
+  FIRST_NINE_LEVEL,
   FIRST_SIX_LEVEL,
   FIRST_TWO_OP_LEVEL,
   TWO_OP_PAIRS,
@@ -49,7 +50,11 @@ function checkLadder(): void {
 
   const lv11 = specForLevel(FIRST_SIX_LEVEL);
   assert(lv11.size === 6 && lv11.ops.length === 4, "lv11 should be 6×6 with all four ops");
-  assert(specForLevel(20).size === 6, "later levels should stay 6×6");
+  assert(specForLevel(14).size === 6, "lv14 should still be 6×6");
+
+  const lv15 = specForLevel(FIRST_NINE_LEVEL);
+  assert(lv15.size === 9 && lv15.ops.length === 4, "lv15 should be 9×9 with all four ops");
+  assert(specForLevel(20).size === 9, "later levels should stay 9×9");
 }
 
 function checkExampleBoard(): void {
@@ -125,7 +130,7 @@ function checkSixBySix(): void {
   const spec = specForLevel(FIRST_SIX_LEVEL);
   for (let n = 0; n < 3; n++) {
     const board = generatePuzzle(spec);
-    assert(board.length === 6 && board[0].length === 6, "lv11+ boards should be 6×6");
+    assert(board.length === 6 && board[0].length === 6, "lv11–14 boards should be 6×6");
     assert(
       board.every((row) => row.every((value) => value !== null)),
       "6×6 board should start full",
@@ -138,9 +143,27 @@ function checkSixBySix(): void {
   }
 }
 
+function checkNineByNine(): void {
+  const spec = specForLevel(FIRST_NINE_LEVEL);
+  for (let n = 0; n < 2; n++) {
+    const board = generatePuzzle(spec);
+    assert(board.length === 9 && board[0].length === 9, "lv15+ boards should be 9×9");
+    assert(
+      board.every((row) => row.every((value) => value !== null)),
+      "9×9 board should start full",
+    );
+    assert(isFullySolvable(board, spec.ops), "9×9 generatePuzzle returned an unsolvable board");
+    const hint = pickSafeHint(board, spec.ops);
+    if (!hint) throw new Error("pickSafeHint missed a 9×9 board");
+    assert(spec.ops.includes(hint.equation.op), "9×9 hint used an illegal op");
+    assert(leftoverSolvable(board, hint.cells, spec.ops), "9×9 hint stranded leftovers");
+  }
+}
+
 checkLadder();
 checkExampleBoard();
 checkGeneratedBoards();
 checkTwoOpLevels();
 checkSixBySix();
+checkNineByNine();
 console.log("puzzle hint + progression checks ok");
