@@ -39,6 +39,24 @@ export type TrioHint = {
   equation: Equation;
 };
 
+/** Line cells up as a, b, c so hint badges match tap order. */
+export function cellsMatchingEquation(
+  cells: ReadonlyArray<CellRef & { value: number }>,
+  equation: Equation,
+): [CellRef, CellRef, CellRef] | null {
+  const leftover = cells.slice();
+  const take = (value: number): (CellRef & { value: number }) | null => {
+    const i = leftover.findIndex((cell) => cell.value === value);
+    if (i < 0) return null;
+    return leftover.splice(i, 1)[0];
+  };
+  const a = take(equation.a);
+  const b = take(equation.b);
+  const c = take(equation.c);
+  if (!a || !b || !c) return null;
+  return [a, b, c];
+}
+
 export function findValidTrios(
   board: Board,
   ops: readonly Operator[] = OPERATORS,
@@ -49,13 +67,15 @@ export function findValidTrios(
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       for (let k = j + 1; k < n; k++) {
+        const trio = [cells[i], cells[j], cells[k]];
         const equation = anyValidEquation(
-          [cells[i].value, cells[j].value, cells[k].value],
+          [trio[0].value, trio[1].value, trio[2].value],
           ops,
         );
         if (equation) {
+          const ordered = cellsMatchingEquation(trio, equation);
           trios.push({
-            cells: [cells[i], cells[j], cells[k]],
+            cells: ordered ?? [trio[0], trio[1], trio[2]],
             equation,
           });
         }
@@ -286,12 +306,12 @@ function generatePackedPuzzle(spec: LevelSpec): Board {
   const seeds: TrioHint[] = [];
   for (let t = 0; t < count; t++) {
     const eq = makeKidEquation(spec);
-    const values = shuffle([eq.a, eq.b, eq.c]);
     const cells: [CellRef, CellRef, CellRef] = [
       slots[t * 3],
       slots[t * 3 + 1],
       slots[t * 3 + 2],
     ];
+    const values = [eq.a, eq.b, eq.c];
     for (let k = 0; k < 3; k++) {
       board[cells[k].row][cells[k].col] = values[k];
     }

@@ -7,13 +7,13 @@ The playfield is real **Three.js** (chunky pastel blocks, isometric-ish camera, 
 ## How to play
 
 1. Tap **Play** on the title screen.
-2. Tap three number blocks (one tap each — no dragging).
-3. Pick a math tool. A true equation busts those blocks.
+2. Tap three number blocks **in order** (one tap each — no dragging): first number, then the next, then the answer. The bar shows `4  □  4  =  16` as you pick.
+3. Pick a math tool for the blank. **Order counts** — `4 □ 4 = 16` only busts with ×, not ÷ (`4 ÷ 4 = 1`). A miss shows the real value so you can learn.
 4. Clear the whole board to win the level — a new solvable board deals itself.
 
 **Hint** (bottom bar) highlights a true equation that can still finish the board and spends 1 hint (you start a run with 5; each level win gives +1). **Undo** (next to Hint) puts the last successful bust back and returns those points. A run starts from the title **Play** button; winning a board auto-deals the next one.
 
-A wrong operator clears your picks. A true equation that would strand the board still explodes, then auto-reverses with a coach note.
+A wrong operator or wrong tap order clears your picks and shows what the equation actually equals. A true equation that would strand the board still explodes, then auto-reverses with a coach note.
 
 ## Level ladder
 

@@ -7,6 +7,7 @@ import {
 } from "./progress";
 import {
   EXAMPLE_BOARD,
+  cellsMatchingEquation,
   clearCells,
   findSafeTrios,
   findValidTrios,
@@ -71,7 +72,27 @@ function checkExampleBoard(): void {
       leftoverSolvable(EXAMPLE_BOARD, trio.cells),
       `safe trio ${trio.equation.a} ${trio.equation.op} ${trio.equation.b} = ${trio.equation.c} stranded the board`,
     );
+    const va = EXAMPLE_BOARD[trio.cells[0].row][trio.cells[0].col];
+    const vb = EXAMPLE_BOARD[trio.cells[1].row][trio.cells[1].col];
+    const vc = EXAMPLE_BOARD[trio.cells[2].row][trio.cells[2].col];
+    assert(
+      va === trio.equation.a && vb === trio.equation.b && vc === trio.equation.c,
+      "hint cells should be in tap order a, b, c",
+    );
   }
+
+  const ordered = cellsMatchingEquation(
+    [
+      { row: 0, col: 2, value: 16 },
+      { row: 0, col: 0, value: 4 },
+      { row: 0, col: 1, value: 4 },
+    ],
+    { a: 4, op: "×", b: 4, c: 16 },
+  );
+  assert(
+    ordered !== null && ordered[0].col === 0 && ordered[1].col === 1 && ordered[2].col === 2,
+    "duplicate 4s should still line up as a, b, c",
+  );
 
   const stranding = valid.filter((trio) => !leftoverSolvable(EXAMPLE_BOARD, trio.cells));
   for (const trio of stranding) {

@@ -200,6 +200,59 @@ button:disabled { cursor: default; }
   color: #fff8e7;
 }
 
+.status-eq {
+  padding: 6px 8px 5px;
+}
+
+.eq-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.eq-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: clamp(1.05rem, 4.4vw, 1.35rem);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.eq-slot {
+  min-width: 1.55em;
+  height: 1.5em;
+  padding: 0 5px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 248, 231, 0.16);
+}
+
+.eq-slot.blank {
+  border: 2px dashed rgba(255, 230, 0, 0.5);
+  background: rgba(255, 248, 231, 0.06);
+  color: rgba(255, 248, 231, 0.4);
+}
+
+.eq-slot.op {
+  color: #ffe600;
+}
+
+.eq-eq {
+  color: #ffe600;
+  font-size: 1.05em;
+  padding: 0 1px;
+}
+
+.eq-note {
+  font-size: clamp(0.68rem, 2.6vw, 0.78rem);
+  font-weight: 800;
+  color: #ffe6fb;
+}
+
 .status-ready { background: rgba(255, 230, 0, 0.22); border-color: #ffe600; color: #fff8e7; }
 .status-hit { background: rgba(46, 255, 240, 0.2); border-color: #2efff0; }
 .status-miss { background: rgba(255, 107, 154, 0.22); border-color: #ff6b9a; }

@@ -1,5 +1,11 @@
 import { Board3D } from "./board3d";
-import { findEquation, formatEquation, type Operator } from "./math";
+import {
+  evaluateOrdered,
+  formatDraftEquation,
+  formatEquation,
+  formatOrderedMiss,
+  type Operator,
+} from "./math";
 import { formatOps, specForLevel, type LevelSpec } from "./progress";
 import {
   EXAMPLE_BOARD,
@@ -38,9 +44,9 @@ const CLEAR_BONUS = 250;
 const START_HINTS = 5;
 
 const TIPS = [
-  { step: "1 / 3", body: "Tap three number blocks." },
-  { step: "2 / 3", body: "Then tap × ÷ + − under the board to bust a true equation!" },
-  { step: "3 / 3", body: "Stuck? Hint shows a winning trio. Undo takes a bust back." },
+  { step: "1 / 3", body: "Tap three blocks in order: first number, then next, then the answer." },
+  { step: "2 / 3", body: "Then tap × ÷ + − in the blank. Order counts — 4 □ 4 = 16 only busts with ×!" },
+  { step: "3 / 3", body: "Stuck? Hint shows a winning equation. Undo takes a bust back." },
 ] as const;
 
 function requireApp(): HTMLDivElement {
@@ -97,6 +103,7 @@ let celebrating = false;
 let hintCells: CellRef[] = [];
 let statusKind: StatusKind = "idle";
 let statusText = "Tap three number blocks.";
+let statusHtml: string | null = null;
 let pendingClear: CellRef[] | null = null;
 let press: { x: number; y: number } | null = null;
 let animating = false;
@@ -123,9 +130,43 @@ function selectionValues(): [number, number, number] | null {
   return values as [number, number, number];
 }
 
-function setStatus(kind: StatusKind, text: string): void {
+function setStatus(kind: StatusKind, text: string, html: string | null = null): void {
   statusKind = kind;
   statusText = text;
+  statusHtml = html;
+}
+
+function pickedNumbers(): Array<number | null> {
+  return selection.map((cell) => board[cell.row][cell.col]);
+}
+
+function renderEquationHtml(
+  values: readonly (number | null | undefined)[],
+  op: Operator | null = null,
+  note?: string,
+): string {
+  const slot = (value: number | null | undefined, kind: "num" | "ans"): string => {
+    if (value == null) {
+      return `<span class="eq-slot ${kind} blank"></span>`;
+    }
+    return `<span class="eq-slot ${kind}">${value}</span>`;
+  };
+  const opSlot = op
+    ? `<span class="eq-slot op">${op}</span>`
+    : `<span class="eq-slot op blank">□</span>`;
+  const noteHtml = note ? `<span class="eq-note">${note}</span>` : "";
+  return `<span class="eq-wrap"><span class="eq-line">${slot(values[0], "num")}${opSlot}${slot(values[1], "num")}<span class="eq-eq">=</span>${slot(values[2], "ans")}</span>${noteHtml}</span>`;
+}
+
+function refreshPickStatus(): void {
+  const nums = pickedNumbers();
+  if (nums.length === 0) {
+    setStatus("idle", defaultIdleMessage());
+    return;
+  }
+  const draft = formatDraftEquation(nums);
+  const note = nums.length === 3 ? `Pick ${formatOps(spec.ops)}` : undefined;
+  setStatus(nums.length === 3 ? "ready" : "idle", draft, renderEquationHtml(nums, null, note));
 }
 
 function wait(ms: number): Promise<void> {
@@ -185,11 +226,7 @@ function addToSelection(cell: CellRef): boolean {
   }
   selection = [...selection, cell];
   playSelect();
-  if (selection.length < 3) {
-    setStatus("idle", selection.length === 1 ? "Nice! Tap two more." : "One more block…");
-  } else {
-    setStatus("ready", `Pick ${formatOps(spec.ops)}`);
-  }
+  refreshPickStatus();
   return true;
 }
 
@@ -197,11 +234,7 @@ function removeFromSelection(cell: CellRef): void {
   if (pendingClear || animating) return;
   selection = selection.filter((picked) => !sameCell(picked, cell));
   playDeselect();
-  if (selection.length === 0) {
-    setStatus("idle", "Tap three number blocks.");
-  } else {
-    setStatus("idle", selection.length === 1 ? "Nice! Tap two more." : "One more block…");
-  }
+  refreshPickStatus();
 }
 
 function hiddenCells(): CellRef[] {
@@ -376,18 +409,34 @@ async function tryOperator(op: Operator): Promise<void> {
   if (!values || animating || !view) return;
   if (!spec.ops.includes(op)) return;
 
-  const equation = findEquation(values, op);
-  if (!equation) {
+  const result = evaluateOrdered(values, op);
+  if ("miss" in result) {
     playMiss();
     view.shake();
     flashMiss();
-    resetPicks("Not quite! Picks cleared — try three blocks again.");
-    setStatus("miss", "Not quite! Picks cleared — try three blocks again.");
+    selection = [];
+    hintCells = [];
+    pendingClear = null;
+    const missText = formatOrderedMiss(result.miss);
+    setStatus(
+      "miss",
+      missText,
+      renderEquationHtml(
+        [result.miss.a, result.miss.b, result.miss.actual],
+        result.miss.op,
+        result.miss.actual === null
+          ? result.miss.op === "÷"
+            ? `not a whole number · you picked ${result.miss.expected}`
+            : `doesn’t work · you picked ${result.miss.expected}`
+          : `not ${result.miss.expected}`,
+      ),
+    );
     syncView();
     updateChrome();
     drawLine();
     return;
   }
+  const equation = result.hit;
 
   const cells = selection.slice();
   const preview = clearCells(board, cells);
@@ -397,7 +446,11 @@ async function tryOperator(op: Operator): Promise<void> {
   pendingClear = cells;
   animating = true;
   const bustText = formatEquation(equation);
-  setStatus("hit", `${bustText}  ·  Bust!`);
+  setStatus(
+    "hit",
+    `${bustText}  ·  Bust!`,
+    renderEquationHtml([equation.a, equation.b, equation.c], equation.op, "Bust!"),
+  );
   updateChrome();
   syncView();
   drawLine();
@@ -490,7 +543,16 @@ function showHint(): void {
   hints -= 1;
   hintCells = trio.cells;
   selection = [];
-  setStatus("idle", `Hint: ${formatEquation(trio.equation)} — find those blocks!`);
+  const hintEq = formatEquation(trio.equation);
+  setStatus(
+    "idle",
+    `Hint: ${hintEq} — tap in that order!`,
+    renderEquationHtml(
+      [trio.equation.a, trio.equation.b, trio.equation.c],
+      trio.equation.op,
+      "tap in that order",
+    ),
+  );
   syncView();
   updateChrome();
   drawLine();
@@ -509,8 +571,9 @@ function updateChrome(): void {
 
   const status = document.querySelector<HTMLElement>("#status");
   if (status) {
-    status.className = `status status-${statusKind}`;
-    status.textContent = statusText;
+    status.className = `status status-${statusKind}${statusHtml ? " status-eq" : ""}`;
+    if (statusHtml) status.innerHTML = statusHtml;
+    else status.textContent = statusText;
   }
 
   const scoreEl = document.querySelector("#score");
@@ -559,7 +622,7 @@ function ensureShell(): void {
       <section id="splash" class="splash">
         <div class="splash-mark" aria-hidden="true">×</div>
         <h1>Math Busters</h1>
-        <p class="splash-how">Tap <strong>3 blocks</strong>, pick <strong>×</strong> <strong>÷</strong> <strong>+</strong> <strong>−</strong>. A true equation busts them!</p>
+        <p class="splash-how">Tap <strong>3 blocks in order</strong> (first □ next = answer), then <strong>×</strong> <strong>÷</strong> <strong>+</strong> <strong>−</strong>. A true equation busts them!</p>
         <p id="splash-best" class="splash-best">${highScore > 0 ? `Best ${highScore}` : "Beat your best score!"}</p>
         <button type="button" class="play-cta" data-action="play">Play</button>
       </section>
