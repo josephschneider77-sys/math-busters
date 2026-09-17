@@ -74,8 +74,8 @@ export function layoutsEqual(a: BoardLayout, b: BoardLayout): boolean {
   return a.size === b.size && a.step === b.step && a.scale === b.scale;
 }
 
-/** Approx. HUD + op dock height; used only to compare board CSS spans. */
-const CHROME_H = 180;
+/** Approx. HUD + reserved equation slot + op dock; used only to compare board CSS spans. */
+const CHROME_H = 210;
 
 /**
  * Approximate CSS pixels the fitted square board occupies in the canvas.

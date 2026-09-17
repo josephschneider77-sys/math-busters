@@ -136,6 +136,15 @@ function setStatus(kind: StatusKind, text: string, html: string | null = null): 
   statusHtml = html;
 }
 
+function statusWithEquation(
+  kind: StatusKind,
+  note: string,
+  values: readonly (number | null | undefined)[] = [],
+  op: Operator | null = null,
+): void {
+  setStatus(kind, note, renderEquationHtml(values, op, note));
+}
+
 function pickedNumbers(): Array<number | null> {
   return selection.map((cell) => board[cell.row][cell.col]);
 }
@@ -154,14 +163,16 @@ function renderEquationHtml(
   const opSlot = op
     ? `<span class="eq-slot op">${op}</span>`
     : `<span class="eq-slot op blank">□</span>`;
-  const noteHtml = note ? `<span class="eq-note">${note}</span>` : "";
+  const noteHtml = `<span class="eq-note">${note ?? "&nbsp;"}</span>`;
   return `<span class="eq-wrap"><span class="eq-line">${slot(values[0], "num")}${opSlot}${slot(values[1], "num")}<span class="eq-eq">=</span>${slot(values[2], "ans")}</span>${noteHtml}</span>`;
 }
+
+statusHtml = renderEquationHtml([], null, statusText);
 
 function refreshPickStatus(): void {
   const nums = pickedNumbers();
   if (nums.length === 0) {
-    setStatus("idle", defaultIdleMessage());
+    statusWithEquation("idle", defaultIdleMessage());
     return;
   }
   const draft = formatDraftEquation(nums);
@@ -207,10 +218,10 @@ function resetPicks(message?: string): void {
     celebrating = true;
     setStatus("win", "You busted every block!");
   } else if (isBoardStuck(board)) {
-    setStatus("stuck", defaultIdleMessage());
+    statusWithEquation("stuck", defaultIdleMessage());
   } else {
     celebrating = false;
-    setStatus("idle", message ?? defaultIdleMessage());
+    statusWithEquation("idle", message ?? defaultIdleMessage());
   }
 }
 
@@ -633,7 +644,7 @@ function ensureShell(): void {
             <div class="score-now"><span id="score">${score}</span></div>
             <div class="score-best">Best <span id="best">${highScore}</span> · Lv <span id="level">${level}</span></div>
           </div>
-          <p id="status" class="status status-${statusKind}" role="status">${statusText}</p>
+          <p id="status" class="status status-${statusKind} status-eq" role="status">${renderEquationHtml([], null, statusText)}</p>
         </header>
         <div id="tip-slot" class="tip-slot" hidden></div>
 
