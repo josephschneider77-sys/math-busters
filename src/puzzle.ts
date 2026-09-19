@@ -106,6 +106,21 @@ function leftoverCount(board: Board, trio: TrioHint): number {
 /** Packed-deal covers, cloned with the board so 9×9 hints stay cheap. */
 const seedTrios = new WeakMap<Board, TrioHint[]>();
 
+export function boardSeeds(board: Board): TrioHint[] | undefined {
+  const seeds = seedTrios.get(board);
+  return seeds?.slice();
+}
+
+export function restoreBoardSeeds(board: Board, seeds: readonly TrioHint[]): void {
+  seedTrios.set(
+    board,
+    seeds.map((trio) => ({
+      cells: [trio.cells[0], trio.cells[1], trio.cells[2]],
+      equation: { ...trio.equation },
+    })),
+  );
+}
+
 function intactSeeds(board: Board, seeds: TrioHint[]): TrioHint[] {
   return seeds.filter((trio) => trio.cells.every((cell) => board[cell.row][cell.col] !== null));
 }
