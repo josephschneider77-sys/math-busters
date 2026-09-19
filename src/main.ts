@@ -8,6 +8,13 @@ import {
 } from "./math";
 import { formatOps, specForLevel, type LevelSpec } from "./progress";
 import {
+  clearSavedRun,
+  readSavedRun,
+  writeSavedRun,
+  type RunSnapshot,
+  type SavedStatusKind,
+} from "./persist";
+import {
   EXAMPLE_BOARD,
   clearCells,
   cloneBoard,
@@ -262,14 +269,105 @@ function applyShellSize(size: LevelSpec["size"]): void {
   document.querySelector(".shell")?.classList.toggle("board-wide", size >= 6);
 }
 
-function startingLevel(): number {
+function levelFromQuery(): number | null {
   try {
     const raw = new URLSearchParams(window.location.search).get("level");
+    if (raw == null || raw === "") return null;
     const n = Number(raw);
-    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : null;
   } catch {
-    return 1;
+    return null;
   }
+}
+
+function startingLevel(): number {
+  return levelFromQuery() ?? 1;
+}
+
+function snapshotRun(): RunSnapshot {
+  return {
+    level,
+    score,
+    hints,
+    busts,
+    board,
+    selection,
+    hintCells,
+    history,
+    pathBlocked,
+    coachText,
+    celebrating,
+    statusKind: statusKind as SavedStatusKind,
+    statusText,
+    statusHtml,
+    tipStep,
+  };
+}
+
+function persistRun(): void {
+  if (screen !== "play") return;
+  writeSavedRun(snapshotRun());
+}
+
+function applyRun(saved: RunSnapshot): void {
+  level = saved.level;
+  spec = specForLevel(level);
+  score = saved.score;
+  hints = saved.hints;
+  busts = saved.busts;
+  board = cloneBoard(saved.board);
+  selection = saved.selection.map((cell) => ({ row: cell.row, col: cell.col }));
+  hintCells = saved.hintCells.map((cell) => ({ row: cell.row, col: cell.col }));
+  history = saved.history.map((item) => ({
+    board: cloneBoard(item.board),
+    busts: item.busts,
+    score: item.score,
+  }));
+  pathBlocked = saved.pathBlocked;
+  coachText = saved.coachText;
+  celebrating = saved.celebrating;
+  statusKind = saved.statusKind;
+  statusText = saved.statusText;
+  statusHtml = saved.statusHtml;
+  tipStep = saved.tipStep;
+  pendingClear = null;
+  reforming = [];
+  animating = false;
+  press = null;
+}
+
+function showPlayView(): void {
+  applyShellSize(spec.size);
+  ensureView();
+  view?.configure(spec.size);
+  syncView();
+  updateChrome();
+  renderTip();
+  requestAnimationFrame(() => {
+    view?.resize();
+    drawLine();
+  });
+}
+
+function resumeRun(saved: RunSnapshot): boolean {
+  screen = "play";
+  applyRun(saved);
+  if (isBoardEmpty(board)) {
+    celebrating = false;
+    level += 1;
+    dealBoard(false, dealMessage(specForLevel(level), "Fresh board! Tap three blocks."));
+    return true;
+  }
+  showPlayView();
+  persistRun();
+  return true;
+}
+
+function tryResume(): boolean {
+  if (levelFromQuery() != null) return false;
+  const saved = readSavedRun();
+  if (!saved) return false;
+  return resumeRun(saved);
 }
 
 function dealBoard(useExample = false, message?: string): void {
@@ -292,6 +390,7 @@ function dealBoard(useExample = false, message?: string): void {
   syncView();
   updateChrome();
   drawLine();
+  persistRun();
 }
 
 function ensureView(): Board3D {
@@ -303,6 +402,7 @@ function ensureView(): Board3D {
 }
 
 function startRun(): void {
+  clearSavedRun();
   screen = "play";
   score = 0;
   hints = START_HINTS;
@@ -312,6 +412,7 @@ function startRun(): void {
   ensureView();
   dealBoard(true, "Tap three blocks!");
   beginTutorialIfNeeded();
+  persistRun();
   requestAnimationFrame(() => {
     view?.resize();
     drawLine();
@@ -413,6 +514,7 @@ async function undoBust(): Promise<void> {
   syncView();
   updateChrome();
   drawLine();
+  persistRun();
 }
 
 async function tryOperator(op: Operator): Promise<void> {
@@ -445,6 +547,7 @@ async function tryOperator(op: Operator): Promise<void> {
     syncView();
     updateChrome();
     drawLine();
+    persistRun();
     return;
   }
   const equation = result.hit;
@@ -489,6 +592,7 @@ async function tryOperator(op: Operator): Promise<void> {
     syncView();
     updateChrome();
     drawLine();
+    persistRun();
     return;
   }
 
@@ -509,6 +613,7 @@ async function tryOperator(op: Operator): Promise<void> {
   syncView();
   updateChrome();
   drawLine();
+  persistRun();
 
   if (wins) {
     playWin();
@@ -567,6 +672,7 @@ function showHint(): void {
   syncView();
   updateChrome();
   drawLine();
+  persistRun();
 }
 
 function updateChrome(): void {
@@ -693,6 +799,7 @@ function tapCell(clientX: number, clientY: number): void {
   syncView();
   updateChrome();
   drawLine();
+  persistRun();
 }
 
 function bindEvents(): void {
@@ -744,6 +851,7 @@ function bindEvents(): void {
     unlockAudio();
     if (button.dataset.tip === "skip") dismissTutorial();
     else advanceTip();
+    persistRun();
   });
 }
 
@@ -756,10 +864,29 @@ window.visualViewport?.addEventListener("resize", () => {
   drawLine();
 });
 
+function onBackground(): void {
+  persistRun();
+}
+
+function onForeground(): void {
+  if (screen === "play") return;
+  tryResume();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") onBackground();
+  else onForeground();
+});
+window.addEventListener("pagehide", onBackground);
+window.addEventListener("blur", onBackground);
+window.addEventListener("pageshow", onForeground);
+
 armAudioUnlock();
 ensureShell();
-updateChrome();
-requestAnimationFrame(() => {
-  view?.resize();
-  drawLine();
-});
+if (!tryResume()) {
+  updateChrome();
+  requestAnimationFrame(() => {
+    view?.resize();
+    drawLine();
+  });
+}

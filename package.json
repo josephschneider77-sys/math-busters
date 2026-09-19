@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "tsx src/math.test.ts && tsx src/puzzle.test.ts && tsx src/layout.test.ts",
+    "test": "tsx src/math.test.ts && tsx src/puzzle.test.ts && tsx src/layout.test.ts && tsx src/persist.test.ts",
     "icons": "node scripts/gen-icons.mjs",
     "preview": "vite preview"
   },
